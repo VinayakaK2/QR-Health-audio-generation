@@ -9,12 +9,15 @@ import PatientForm from './pages/PatientForm';
 import PatientDetail from './pages/PatientDetail';
 import EmergencyPage from './pages/EmergencyPage';
 import RegisterHospital from './pages/RegisterHospital';
+import OwnerDashboard from './pages/OwnerDashboard';
 import OwnerHospitalList from './pages/OwnerHospitalList';
+import OwnerHospitalPatients from './pages/OwnerHospitalPatients';
+import OwnerReports from './pages/OwnerReports';
 
 function App() {
     return (
         <AuthProvider>
-            <Router>
+            <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                 <Toaster
                     position="top-right"
                     toastOptions={{
@@ -48,10 +51,34 @@ function App() {
 
                     {/* Owner Portal (SUPER_ADMIN only) */}
                     <Route
+                        path="/owner/dashboard"
+                        element={
+                            <ProtectedRoute>
+                                <OwnerDashboard />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
                         path="/owner/hospitals"
                         element={
                             <ProtectedRoute>
                                 <OwnerHospitalList />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/owner/hospitals/:id/patients"
+                        element={
+                            <ProtectedRoute>
+                                <OwnerHospitalPatients />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/owner/reports"
+                        element={
+                            <ProtectedRoute>
+                                <OwnerReports />
                             </ProtectedRoute>
                         }
                     />

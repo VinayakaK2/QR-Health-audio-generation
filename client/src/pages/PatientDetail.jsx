@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import PatientReports from '../components/PatientReports';
 import axios from '../api/axios';
 import toast from 'react-hot-toast';
 
@@ -221,6 +222,9 @@ const PatientDetail = () => {
                                         </a>
                                     </div>
                                 </div>
+
+                                {/* Medical Reports Section */}
+                                <PatientReports patientId={patient._id} />
                             </div>
                         </div>
                     </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import axios from '../api/axios';
@@ -22,8 +22,16 @@ const OwnerHospitalList = () => {
 
     const fetchHospitals = async () => {
         try {
-            const response = await axios.get(`/hospitals${filter ? `?status=${filter}` : ''}`);
-            setHospitals(response.data.hospitals);
+            // Use admin API that includes patient counts
+            const response = await axios.get('/admin/hospitals');
+            let hospitalData = response.data.hospitals;
+
+            // Apply filter if needed
+            if (filter) {
+                hospitalData = hospitalData.filter(h => h.status === filter);
+            }
+
+            setHospitals(hospitalData);
         } catch (error) {
             toast.error('Failed to load hospitals');
         } finally {
@@ -81,6 +89,9 @@ const OwnerHospitalList = () => {
             <Navbar />
             <div className="max-w-7xl mx-auto p-8">
                 <div className="mb-8">
+                    <Link to="/owner/dashboard" className="text-secondary hover:underline mb-4 inline-block">
+                        ← Back to Dashboard
+                    </Link>
                     <h1 className="text-3xl font-bold text-gray-900 mb-2">Hospital Management</h1>
                     <p className="text-gray-600">System Owner Portal - Approve or reject hospital registrations</p>
                 </div>
@@ -118,8 +129,8 @@ const OwnerHospitalList = () => {
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Hospital</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Contact</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Admin User</th>
+                                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Patients</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
-                                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Registered</th>
                                         <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
                                     </tr>
                                 </thead>
@@ -143,12 +154,20 @@ const OwnerHospitalList = () => {
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4">
+                                                <Link
+                                                    to={`/owner/hospitals/${hospital._id}/patients`}
+                                                    className="inline-flex items-center space-x-1 text-secondary hover:underline"
+                                                >
+                                                    <span className="font-semibold">{hospital.patientCount || 0}</span>
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                    </svg>
+                                                </Link>
+                                            </td>
+                                            <td className="px-6 py-4">
                                                 <span className={getStatusBadge(hospital.status)}>
                                                     {hospital.status}
                                                 </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-gray-600">
-                                                {new Date(hospital.createdAt).toLocaleDateString()}
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex justify-end space-x-2">

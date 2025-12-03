@@ -11,6 +11,8 @@ const authRoutes = require('./routes/auth');
 const patientRoutes = require('./routes/patients');
 const publicRoutes = require('./routes/public');
 const hospitalRoutes = require('./routes/hospitals');
+const adminRoutes = require('./routes/admin');
+const reportRoutes = require('./routes/reports');
 
 // Initialize express app
 const app = express();
@@ -58,6 +60,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/hospitals', hospitalRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
