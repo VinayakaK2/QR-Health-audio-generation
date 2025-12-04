@@ -99,6 +99,18 @@ const patientSchema = new mongoose.Schema({
     aiSummary: {
         type: String
     },
+    aiCombinedSummary: {
+        type: String
+    },
+    aiDetailedBreakdown: {
+        type: String // Storing as stringified JSON or formatted text, but prompt asks for JSON structure. 
+        // Actually, let's store as String for simplicity if it's just text, or Mixed if it's structured.
+        // The prompt returns JSON with "combinedSections" as a string. So String is fine.
+    },
+    aiLifestyleAdvice: {
+        type: [String],
+        default: []
+    },
     aiLastUpdatedAt: {
         type: Date
     },

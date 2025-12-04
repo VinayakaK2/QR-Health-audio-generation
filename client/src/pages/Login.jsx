@@ -41,7 +41,8 @@ const Login = () => {
                 // Patient Login
                 const payload = {
                     email,
-                    password
+                    password,
+                    faceDescriptor: descriptor // Include face descriptor if available
                 };
 
                 // Use the new dedicated patient login endpoint

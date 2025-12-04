@@ -12,10 +12,11 @@ const PatientReports = ({ patientId }) => {
         reportType: 'Other',
         reportDate: new Date().toISOString().split('T')[0],
         description: '',
-        description: '',
         reportFileUrl: ''
     });
     const [uploading, setUploading] = useState(false);
+    const [validating, setValidating] = useState(false);
+    const [aiValidationResult, setAiValidationResult] = useState(null);
 
     useEffect(() => {
         if (patientId) {
@@ -94,6 +95,7 @@ const PatientReports = ({ patientId }) => {
     const handleCancel = () => {
         setShowForm(false);
         setEditingReport(null);
+        setAiValidationResult(null);
         resetForm();
     };
 
@@ -208,9 +210,40 @@ const PatientReports = ({ patientId }) => {
                                                 });
                                                 setFormData(prev => ({ ...prev, reportFileUrl: response.data.fileUrl }));
                                                 toast.success('File uploaded successfully');
+
+                                                // Trigger AI Analysis
+                                                setValidating(true);
+                                                try {
+                                                    // We need the fileUrl that was just set in formData, but state updates are async.
+                                                    // So we use the response.data.fileUrl we just got.
+                                                    console.log("Upload successful, response:", response.data);
+                                                    const fileUrl = response.data.fileUrl;
+
+                                                    if (!fileUrl) {
+                                                        throw new Error("No file URL received from upload server");
+                                                    }
+
+                                                    console.log("Sending to AI Validate:", { fileUrl, fileName: file.name });
+
+                                                    const validationResponse = await axios.post('/reports/ai-validate', {
+                                                        uploadedFiles: [{
+                                                            fileName: file.name,
+                                                            mimeType: file.type,
+                                                            size: file.size,
+                                                            fileUrl: fileUrl
+                                                        }]
+                                                    });
+                                                    setAiValidationResult(validationResponse.data.validationResult);
+                                                } catch (error) {
+                                                    console.error("AI Analysis failed", error);
+                                                    const errMsg = error.response?.data?.message || error.message;
+                                                    toast.error(`AI Analysis failed: ${errMsg}`);
+                                                } finally {
+                                                    setValidating(false);
+                                                }
+
                                             } catch (error) {
                                                 toast.error('File upload failed');
-                                            } finally {
                                                 setUploading(false);
                                             }
                                         }}
@@ -232,6 +265,57 @@ const PatientReports = ({ patientId }) => {
                                     </p>
                                 )}
                             </div>
+
+                            {/* AI Analysis Results */}
+                            {validating && (
+                                <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200 flex items-center space-x-3 md:col-span-2">
+                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-500"></div>
+                                    <span className="text-sm text-slate-600">Analyzing report content...</span>
+                                </div>
+                            )}
+
+                            {aiValidationResult && (
+                                <div className="mt-4 border rounded-xl p-4 bg-white shadow-sm md:col-span-2">
+                                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-800">
+                                        <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                        </svg>
+                                        AI Report Analysis
+                                    </h3>
+
+                                    <div className="space-y-3">
+                                        {/* Report Category */}
+                                        <div className="flex items-center justify-between p-2 bg-indigo-50 rounded-lg border border-indigo-100">
+                                            <span className="text-xs font-medium text-indigo-600 uppercase tracking-wider">Category</span>
+                                            <span className="text-sm font-bold text-indigo-900">{aiValidationResult.reportCategory}</span>
+                                        </div>
+
+                                        {/* Detected Panels */}
+                                        {aiValidationResult.detectedPanels && aiValidationResult.detectedPanels.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Detected Panels</h4>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {aiValidationResult.detectedPanels.map((panel, idx) => (
+                                                        <span key={idx} className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs border border-slate-200">
+                                                            {panel}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Key Findings */}
+                                        {aiValidationResult.keyFindings && (
+                                            <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                                <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Key Findings</h4>
+                                                <p className="text-sm text-slate-700 leading-relaxed">
+                                                    {aiValidationResult.keyFindings}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex space-x-3">

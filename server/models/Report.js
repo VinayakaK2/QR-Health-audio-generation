@@ -39,6 +39,23 @@ const reportSchema = new mongoose.Schema({
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
+    },
+    // AI Analysis Fields
+    aiCategory: {
+        type: String,
+        trim: true
+    },
+    aiPanels: {
+        type: [String],
+        default: []
+    },
+    aiSummary: {
+        type: String,
+        trim: true
+    },
+    aiHealthSuggestions: {
+        type: [String],
+        default: []
     }
 }, {
     timestamps: true

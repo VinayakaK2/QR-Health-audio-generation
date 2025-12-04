@@ -225,7 +225,6 @@ const HospitalIdCards = () => {
                                                             src={patient.photoUrl}
                                                             alt="Profile"
                                                             className="w-full h-full object-cover"
-                                                            crossOrigin="anonymous"
                                                             onError={(e) => {
                                                                 e.target.onerror = null;
                                                                 e.target.style.display = 'none';
