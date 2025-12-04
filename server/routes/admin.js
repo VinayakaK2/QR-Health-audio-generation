@@ -2,6 +2,7 @@ const express = require('express');
 const Patient = require('../models/Patient');
 const PatientEditRequest = require('../models/PatientEditRequest');
 const { authMiddleware } = require('../middleware/auth');
+const { generatePatientSummary } = require('../services/aiSummaryService');
 
 const router = express.Router();
 
@@ -82,6 +83,18 @@ router.post('/requests/:id/approve', authMiddleware, ensureSuperAdmin, async (re
         }
 
         Object.assign(patient, request.requestedChanges);
+
+        // Generate AI Summary on approval
+        try {
+            const summary = await generatePatientSummary(patient);
+            if (summary) {
+                patient.aiSummary = summary;
+                patient.aiLastUpdatedAt = new Date();
+            }
+        } catch (error) {
+            console.error("AI summary generation failed:", error.message);
+        }
+
         await patient.save();
 
         // Update request status

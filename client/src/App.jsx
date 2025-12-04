@@ -15,6 +15,8 @@ import OwnerHospitalPatients from './pages/OwnerHospitalPatients';
 import OwnerReports from './pages/OwnerReports';
 import AdminRequests from './pages/AdminRequests';
 
+import PatientDashboard from './pages/PatientDashboard';
+
 function App() {
     return (
         <AuthProvider>
@@ -91,6 +93,10 @@ function App() {
                             </ProtectedRoute>
                         }
                     />
+
+                    {/* Patient Portal Routes */}
+
+                    <Route path="/patient/dashboard" element={<ProtectedRoute allowedRoles={['PATIENT']}><PatientDashboard /></ProtectedRoute>} />
 
                     {/* Hospital Admin Protected Routes */}
                     <Route

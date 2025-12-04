@@ -85,6 +85,7 @@ const OwnerHospitalPatients = () => {
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Age / Gender</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Blood Group</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Risk Level</th>
+                                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">AI Summary</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Emergency Contact</th>
                                     </tr>
                                 </thead>
@@ -102,6 +103,9 @@ const OwnerHospitalPatients = () => {
                                                 <span className={getRiskBadge(patient.riskLevel)}>
                                                     {patient.riskLevel}
                                                 </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate" title={patient.aiSummary}>
+                                                {patient.aiSummary || <span className="text-gray-400 italic">None</span>}
                                             </td>
                                             <td className="px-6 py-4 text-sm text-gray-600">
                                                 <div>{patient.emergencyContact.name}</div>

@@ -37,6 +37,13 @@ export const AuthProvider = ({ children }) => {
         return response.data;
     };
 
+    const setAuthData = (userData, newToken) => {
+        setToken(newToken);
+        setUser(userData);
+        localStorage.setItem('token', newToken);
+        localStorage.setItem('user', JSON.stringify(userData));
+    };
+
     const logout = () => {
         setToken(null);
         setUser(null);
@@ -48,6 +55,7 @@ export const AuthProvider = ({ children }) => {
         token,
         user,
         login,
+        setAuthData,
         logout,
         isAuthenticated: !!token,
         isSuperAdmin: user?.role === 'SUPER_ADMIN',

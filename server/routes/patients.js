@@ -5,6 +5,7 @@ const fs = require('fs').promises;
 const Patient = require('../models/Patient');
 const PatientEditRequest = require('../models/PatientEditRequest');
 const { authMiddleware } = require('../middleware/auth');
+const { generatePatientSummary } = require('../services/aiSummaryService');
 
 const router = express.Router();
 
@@ -77,6 +78,10 @@ router.get('/:id', authMiddleware, async (req, res, next) => {
 // @access  Protected
 router.post('/', authMiddleware, async (req, res, next) => {
     try {
+        console.log('Create Patient Request Body:', req.body); // DEBUG LOG
+        console.log('User Role:', req.userRole); // DEBUG LOG
+        console.log('User Hospital:', req.userHospital); // DEBUG LOG
+
         // For hospital admins, automatically set the hospital
         let patientData = req.body;
         if (req.userRole === 'HOSPITAL_ADMIN') {
@@ -87,6 +92,17 @@ router.post('/', authMiddleware, async (req, res, next) => {
                 });
             }
             patientData.hospital = req.userHospital;
+        }
+
+        // Check if email already exists
+        if (patientData.email) {
+            const existingPatient = await Patient.findOne({ email: patientData.email });
+            if (existingPatient) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Patient with this email already exists'
+                });
+            }
         }
 
         const patient = new Patient(patientData);
@@ -108,6 +124,18 @@ router.post('/', authMiddleware, async (req, res, next) => {
 
         // Update patient with QR code URL
         patient.qrCodeUrl = `/uploads/${qrFileName}`;
+
+        // Generate AI Summary
+        try {
+            const summary = await generatePatientSummary(patient);
+            if (summary) {
+                patient.aiSummary = summary;
+                patient.aiLastUpdatedAt = new Date();
+            }
+        } catch (error) {
+            console.error("AI summary generation failed:", error.message);
+        }
+
         await patient.save();
 
         res.status(201).json({
@@ -116,6 +144,7 @@ router.post('/', authMiddleware, async (req, res, next) => {
             patient
         });
     } catch (error) {
+        console.error('Create Patient Error:', error); // DEBUG LOG
         next(error);
     }
 });
@@ -163,6 +192,18 @@ router.put('/:id', authMiddleware, async (req, res, next) => {
 
         // If SUPER_ADMIN, update directly
         Object.assign(patient, updateData);
+
+        // Generate AI Summary on update
+        try {
+            const summary = await generatePatientSummary(patient);
+            if (summary) {
+                patient.aiSummary = summary;
+                patient.aiLastUpdatedAt = new Date();
+            }
+        } catch (error) {
+            console.error("AI summary generation failed:", error.message);
+        }
+
         await patient.save();
 
         res.json({

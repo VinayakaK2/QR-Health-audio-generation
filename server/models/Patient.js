@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
 const patientSchema = new mongoose.Schema({
@@ -11,7 +12,17 @@ const patientSchema = new mongoose.Schema({
         type: String,
         trim: true,
         lowercase: true,
+        unique: true,
         match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email']
+    },
+    password: {
+        type: String,
+        // Password is optional for existing patients, but required for portal access
+        select: false // Don't return password by default
+    },
+    faceDescriptor: {
+        type: [Number],
+        select: false // Don't return by default, only when needed for verification
     },
     age: {
         type: Number,
@@ -84,10 +95,46 @@ const patientSchema = new mongoose.Schema({
     qrCodeUrl: {
         type: String,
         default: ''
+    },
+    aiSummary: {
+        type: String
+    },
+    aiLastUpdatedAt: {
+        type: Date
+    },
+    isActive: {
+        type: Boolean,
+        default: true
     }
 }, {
     timestamps: true
 });
+
+// Hash password before saving
+patientSchema.pre('save', async function (next) {
+    if (!this.isModified('password')) {
+        return next();
+    }
+
+    // Only hash if password exists (it might be undefined for updates that don't touch it)
+    if (this.password) {
+        try {
+            const salt = await bcrypt.genSalt(10);
+            this.password = await bcrypt.hash(this.password, salt);
+            next();
+        } catch (error) {
+            next(error);
+        }
+    } else {
+        next();
+    }
+});
+
+// Method to compare passwords
+patientSchema.methods.comparePassword = async function (candidatePassword) {
+    if (!this.password) return false;
+    return await bcrypt.compare(candidatePassword, this.password);
+};
 
 // Index for faster qrToken lookups
 patientSchema.index({ qrToken: 1 });

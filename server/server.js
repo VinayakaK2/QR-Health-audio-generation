@@ -13,6 +13,7 @@ const publicRoutes = require('./routes/public');
 const hospitalRoutes = require('./routes/hospitals');
 const adminRoutes = require('./routes/admin');
 const reportRoutes = require('./routes/reports');
+const uploadRoutes = require('./routes/upload');
 
 // Initialize express app
 const app = express();
@@ -57,11 +58,13 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', require('./routes/patientAuthRoutes')); // Mount patient auth routes
 app.use('/api/patients', patientRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/hospitals', hospitalRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

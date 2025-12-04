@@ -12,8 +12,10 @@ const PatientReports = ({ patientId }) => {
         reportType: 'Other',
         reportDate: new Date().toISOString().split('T')[0],
         description: '',
+        description: '',
         reportFileUrl: ''
     });
+    const [uploading, setUploading] = useState(false);
 
     useEffect(() => {
         if (patientId) {
@@ -184,21 +186,57 @@ const PatientReports = ({ patientId }) => {
 
                             <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Report File URL (optional)
+                                    Report File (Image or PDF)
                                 </label>
-                                <input
-                                    type="url"
-                                    value={formData.reportFileUrl}
-                                    onChange={(e) => setFormData({ ...formData, reportFileUrl: e.target.value })}
-                                    className="input-field"
-                                    placeholder="https://example.com/report.pdf"
-                                />
+                                <div className="flex items-center space-x-4">
+                                    <input
+                                        type="file"
+                                        accept="image/*,application/pdf"
+                                        onChange={async (e) => {
+                                            const file = e.target.files[0];
+                                            if (!file) return;
+
+                                            const formData = new FormData();
+                                            formData.append('file', file);
+
+                                            setUploading(true);
+                                            try {
+                                                const response = await axios.post('/upload', formData, {
+                                                    headers: {
+                                                        'Content-Type': 'multipart/form-data'
+                                                    }
+                                                });
+                                                setFormData(prev => ({ ...prev, reportFileUrl: response.data.fileUrl }));
+                                                toast.success('File uploaded successfully');
+                                            } catch (error) {
+                                                toast.error('File upload failed');
+                                            } finally {
+                                                setUploading(false);
+                                            }
+                                        }}
+                                        className="block w-full text-sm text-gray-500
+                                            file:mr-4 file:py-2 file:px-4
+                                            file:rounded-full file:border-0
+                                            file:text-sm file:font-semibold
+                                            file:bg-blue-50 file:text-blue-700
+                                            hover:file:bg-blue-100"
+                                    />
+                                    {uploading && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>}
+                                </div>
+                                {formData.reportFileUrl && (
+                                    <p className="mt-2 text-sm text-green-600 flex items-center">
+                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        File attached
+                                    </p>
+                                )}
                             </div>
                         </div>
 
                         <div className="flex space-x-3">
-                            <button type="submit" className="btn-primary">
-                                {editingReport ? 'Update Report' : 'Create Report'}
+                            <button type="submit" className="btn-primary" disabled={uploading}>
+                                {uploading ? 'Uploading...' : (editingReport ? 'Update Report' : 'Create Report')}
                             </button>
                             <button type="button" onClick={handleCancel} className="btn-outline">
                                 Cancel

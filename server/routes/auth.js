@@ -128,4 +128,103 @@ router.post('/login', async (req, res, next) => {
     }
 });
 
+// @route   POST /api/auth/patient/login
+// @desc    Login patient
+// @access  Public
+router.post('/patient/login', async (req, res, next) => {
+    try {
+        const { email, password, faceDescriptor } = req.body;
+        const faceAuthService = require('../services/faceAuthService');
+
+        // Validate input
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide email and password'
+            });
+        }
+
+        // Check if patient exists
+        // Explicitly select password and faceDescriptor
+        const Patient = require('../models/Patient');
+        const patient = await Patient.findOne({ email }).select('+password +faceDescriptor');
+
+        if (!patient) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid credentials'
+            });
+        }
+
+        // Check if patient is active
+        if (patient.isActive === false) {
+            return res.status(403).json({
+                success: false,
+                message: 'Account is deactivated. Please contact hospital admin.'
+            });
+        }
+
+        // Check password
+        const isPasswordValid = await patient.comparePassword(password);
+        if (!isPasswordValid) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid credentials'
+            });
+        }
+
+        // Face Verification
+        if (patient.faceDescriptor && patient.faceDescriptor.length > 0) {
+            if (!faceDescriptor) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Face authentication required',
+                    requireFaceAuth: true
+                });
+            }
+
+            try {
+                const isMatch = await faceAuthService.verifyFace(patient.faceDescriptor, faceDescriptor);
+
+                if (!isMatch) {
+                    return res.status(401).json({
+                        success: false,
+                        message: 'Face verification failed. Face does not match.'
+                    });
+                }
+            } catch (error) {
+                console.error('Face verification error:', error);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Error verifying face data'
+                });
+            }
+        }
+
+        // Generate JWT token
+        const token = jwt.sign(
+            {
+                id: patient._id,
+                role: 'PATIENT'
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        res.json({
+            success: true,
+            message: 'Login successful',
+            token,
+            user: {
+                id: patient._id,
+                name: patient.fullName,
+                email: patient.email,
+                role: 'PATIENT'
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = router;

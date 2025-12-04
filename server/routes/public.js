@@ -28,7 +28,9 @@ router.get('/patient/:token', async (req, res, next) => {
             medicalConditions: patient.medicalConditions,
             medications: patient.medications,
             emergencyContact: patient.emergencyContact,
-            riskLevel: patient.riskLevel
+            riskLevel: patient.riskLevel,
+            aiSummary: patient.aiSummary,
+            aiLastUpdatedAt: patient.aiLastUpdatedAt
         };
 
         res.json({

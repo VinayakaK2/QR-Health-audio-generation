@@ -1,19 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import FaceCapture from '../components/FaceCapture';
 import axios from '../api/axios';
 import toast from 'react-hot-toast';
 
 const PatientForm = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { isSuperAdmin } = useAuth();
     const isEditMode = !!id;
 
     const [loading, setLoading] = useState(false);
+    const [hospitals, setHospitals] = useState([]);
+    const [showPassword, setShowPassword] = useState(false);
     const [formData, setFormData] = useState({
         fullName: '',
+        hospital: '', // Add hospital field
         email: '',
+        password: '',
         age: '',
         gender: 'Male',
         photoUrl: '',
@@ -26,14 +33,27 @@ const PatientForm = () => {
             phone: '',
             email: ''
         },
-
+        faceDescriptor: null
     });
 
     useEffect(() => {
+        if (isSuperAdmin) {
+            fetchHospitals();
+        }
         if (isEditMode) {
             fetchPatient();
         }
-    }, [id]);
+    }, [id, isSuperAdmin]);
+
+    const fetchHospitals = async () => {
+        try {
+            const response = await axios.get('/hospitals?status=APPROVED');
+            setHospitals(response.data.hospitals);
+        } catch (error) {
+            console.error('Failed to fetch hospitals', error);
+            toast.error('Failed to load hospitals list');
+        }
+    };
 
     const fetchPatient = async () => {
         try {
@@ -41,16 +61,18 @@ const PatientForm = () => {
             const patient = response.data.patient;
             setFormData({
                 fullName: patient.fullName,
+                hospital: patient.hospital,
                 email: patient.email || '',
+                password: '', // Don't populate password
                 age: patient.age,
                 gender: patient.gender,
                 photoUrl: patient.photoUrl || '',
                 bloodGroup: patient.bloodGroup,
-                allergies: patient.allergies.join(', '),
-                medicalConditions: patient.medicalConditions.join(', '),
-                medications: patient.medications.join(', '),
+                allergies: patient.allergies ? patient.allergies.join(', ') : '',
+                medicalConditions: patient.medicalConditions ? patient.medicalConditions.join(', ') : '',
+                medications: patient.medications ? patient.medications.join(', ') : '',
                 emergencyContact: patient.emergencyContact,
-                emergencyContact: patient.emergencyContact,
+                faceDescriptor: null // Don't populate face descriptor for now
             });
         } catch (error) {
             toast.error('Failed to load patient data');
@@ -74,12 +96,39 @@ const PatientForm = () => {
         }
     };
 
+    const handleAutoFill = () => {
+        setFormData({
+            fullName: 'John Doe',
+            email: `john.doe.${Math.floor(Math.random() * 1000)}@example.com`,
+            password: 'password123',
+            age: '30',
+            gender: 'Male',
+            photoUrl: 'https://randomuser.me/api/portraits/men/1.jpg',
+            bloodGroup: 'O+',
+            allergies: 'Peanuts',
+            medicalConditions: 'None',
+            medications: 'None',
+            emergencyContact: {
+                name: 'Jane Doe',
+                phone: '9876543210',
+                email: 'jane@example.com'
+            },
+            faceDescriptor: null
+        });
+        toast.success('Form auto-filled with dummy data');
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
         // Validation
         if (!formData.fullName || !formData.age || !formData.emergencyContact.name || !formData.emergencyContact.phone) {
             toast.error('Please fill in all required fields');
+            return;
+        }
+
+        if (isSuperAdmin && !formData.hospital) {
+            toast.error('Please select a hospital');
             return;
         }
 
@@ -121,17 +170,55 @@ const PatientForm = () => {
                 <Sidebar />
                 <main className="flex-1 p-8">
                     <div className="max-w-4xl mx-auto">
-                        <div className="mb-8">
-                            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                                {isEditMode ? 'Edit Patient' : 'Add New Patient'}
-                            </h1>
-                            <p className="text-gray-600">
-                                {isEditMode ? 'Update patient information' : 'Create a new patient record with QR code'}
-                            </p>
+                        <div className="mb-8 flex justify-between items-start">
+                            <div>
+                                <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                                    {isEditMode ? 'Edit Patient' : 'Add New Patient'}
+                                </h1>
+                                <p className="text-gray-600">
+                                    {isEditMode ? 'Update patient information' : 'Create a new patient record with QR code'}
+                                </p>
+                            </div>
+                            {!isEditMode && (
+                                <button
+                                    type="button"
+                                    onClick={handleAutoFill}
+                                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium"
+                                >
+                                    Auto Fill Dummy Data
+                                </button>
+                            )}
                         </div>
 
                         <form onSubmit={handleSubmit} className="card">
                             <div className="space-y-6">
+
+                                {/* Hospital Selection for Super Admin */}
+                                {isSuperAdmin && (
+                                    <div>
+                                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Hospital Assignment</h2>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Select Hospital <span className="text-red-500">*</span>
+                                            </label>
+                                            <select
+                                                name="hospital"
+                                                value={formData.hospital}
+                                                onChange={handleChange}
+                                                className="input-field"
+                                                required
+                                            >
+                                                <option value="">Select a hospital...</option>
+                                                {hospitals.map(hospital => (
+                                                    <option key={hospital._id} value={hospital._id}>
+                                                        {hospital.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Personal Information */}
                                 <div>
                                     <h2 className="text-xl font-semibold text-gray-900 mb-4">Personal Information</h2>
@@ -164,6 +251,68 @@ const PatientForm = () => {
                                             />
                                         </div>
 
+                                        {!isEditMode && (
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    Password <span className="text-red-500">*</span>
+                                                </label>
+                                                <div className="relative">
+                                                    <input
+                                                        type={showPassword ? "text" : "password"}
+                                                        name="password"
+                                                        value={formData.password}
+                                                        onChange={handleChange}
+                                                        className="input-field pr-10"
+                                                        placeholder="Set a password for patient portal"
+                                                        required
+                                                        minLength={6}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowPassword(!showPassword)}
+                                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                                                    >
+                                                        {showPassword ? (
+                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                                                            </svg>
+                                                        ) : (
+                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                            </svg>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                    </div>
+
+                                    <div className="md:col-span-2 mt-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Face Authentication (Optional)
+                                        </label>
+                                        <div className="flex items-center space-x-4">
+                                            <FaceCapture
+                                                onCapture={(descriptor) => setFormData(prev => ({ ...prev, faceDescriptor: descriptor }))}
+                                                label={formData.faceDescriptor ? "Retake Face Scan" : "Scan Face"}
+                                            />
+                                            {formData.faceDescriptor && (
+                                                <span className="text-green-600 flex items-center text-sm font-medium">
+                                                    <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                    Face Data Captured
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Scanning the face allows the patient to log in securely using facial recognition.
+                                        </p>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                                 Age <span className="text-red-500">*</span>
@@ -219,7 +368,7 @@ const PatientForm = () => {
                                             </select>
                                         </div>
 
-                                        <div className="md:col-span-2">
+                                        <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                                 Photo URL (Optional)
                                             </label>
@@ -280,8 +429,6 @@ const PatientForm = () => {
                                                 placeholder="Metformin, Lisinopril, Aspirin"
                                             />
                                         </div>
-
-
                                     </div>
                                 </div>
 
