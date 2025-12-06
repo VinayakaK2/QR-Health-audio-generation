@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
+import axios from '../api/axios';
 import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
 
@@ -16,7 +16,7 @@ const EmergencyPage = () => {
 
     const fetchPatientData = async () => {
         try {
-            const response = await axios.get(`http://localhost:5000/api/public/patient/${token}`);
+            const response = await axios.get(`/public/patient/${token}`);
             setPatient(response.data.patient);
         } catch (error) {
             setError(true);

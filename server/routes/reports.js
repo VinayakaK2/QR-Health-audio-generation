@@ -93,6 +93,13 @@ router.post('/', async (req, res, next) => {
         await report.populate('patient', 'fullName bloodGroup');
         await report.populate('createdBy', 'name email');
 
+        // Trigger overall analysis
+        try {
+            triggerOverallAnalysis(patientId); // Intentionally not awaiting to avoid blocking response
+        } catch (err) {
+            console.error("Failed to trigger overall analysis:", err);
+        }
+
         res.status(201).json({
             success: true,
             message: 'Report created successfully',
@@ -224,6 +231,13 @@ router.put('/:id', async (req, res, next) => {
         await report.save();
         await report.populate('patient', 'fullName bloodGroup');
         await report.populate('createdBy', 'name email');
+
+        // Trigger overall analysis
+        try {
+            triggerOverallAnalysis(report.patient._id || report.patient); // Intentionally not awaiting
+        } catch (err) {
+            console.error("Failed to trigger overall analysis:", err);
+        }
 
         res.json({
             success: true,

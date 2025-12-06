@@ -232,30 +232,6 @@ Use this example formatting style and rewrite based on real values available:
 ❗ PCV Slightly low → Mild anemia indication, not dangerous.
 Action: Iron rich foods.
 
-🔍 SUGAR TEST
-✔ Fasting: normal
-✔ PP: normal
-No diabetes or prediabetes.
-
-(Continue similar format for Kidney, Liver, Thyroid, Vitamins, Iron, CRP, Cancer markers if present in reports)
-
-### FINAL CONCLUSION TABLE
-Category | Status
-Blood | Normal / minor issues
-Sugar | Normal
-Kidney | Normal
-...
-
-### WHAT NEEDS ATTENTION
-1) Vitamin D deficiency
-2) Iron improvement
-...
-
-### LIFESTYLE & DIET SUGGESTIONS
-Give short bullet points with emojis:
-🥗 Food suggestions
-🚶 Exercise
-💧 Hydration
 😴 Sleep
 🌞 Sunlight
 Avoid medical jargon. No disease names unless clearly stated in reports. Use friendly supportive tone.

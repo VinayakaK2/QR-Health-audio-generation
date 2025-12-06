@@ -82,19 +82,19 @@ const Login = () => {
 
     const fillAdminCredentials = () => {
         setLoginType('admin');
-        setEmail('owner@emergency.com');
+        setEmail('owner@smartqr.com');
         setPassword('owner123');
     };
 
     const fillHospitalCredentials = () => {
         setLoginType('admin');
-        setEmail('admin@hospital.com');
-        setPassword('admin@123');
+        setEmail('admin1@hospital.com');
+        setPassword('password123');
     };
 
     const fillPatientCredentials = () => {
         setLoginType('patient');
-        setEmail('john.doe.76@example.com');
+        setEmail('john.doe.414@example.com');
         setPassword('password123');
     };
 

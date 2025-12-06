@@ -30,7 +30,7 @@ const PatientDetail = () => {
 
     const handleDownloadQR = () => {
         const link = document.createElement('a');
-        link.href = `http://localhost:5000${patient.qrCodeUrl}`;
+        link.href = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}${patient.qrCodeUrl}`;
         link.download = `${patient.fullName.replace(/\s+/g, '_')}_QR.png`;
         document.body.appendChild(link);
         link.click();
@@ -91,7 +91,7 @@ const PatientDetail = () => {
                                     {patient.qrCodeUrl && (
                                         <div className="mb-4">
                                             <img
-                                                src={`http://localhost:5000${patient.qrCodeUrl}`}
+                                                src={`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}${patient.qrCodeUrl}`}
                                                 alt="Patient QR Code"
                                                 className="w-full max-w-xs mx-auto border-4 border-gray-200 rounded-lg"
                                             />
