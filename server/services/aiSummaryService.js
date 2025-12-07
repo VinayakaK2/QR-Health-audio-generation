@@ -1,11 +1,13 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const OpenAI = require('openai');
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize OpenAI
+const openai = process.env.OPENAI_API_KEY
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    : null;
 
 async function generatePatientSummary(patient) {
-    if (!process.env.GEMINI_API_KEY) {
-        console.warn("GEMINI_API_KEY not set – skipping AI summary.");
+    if (!openai) {
+        console.warn("OPENAI_API_KEY not set – skipping AI summary.");
         return "";
     }
 
@@ -15,7 +17,7 @@ async function generatePatientSummary(patient) {
         gender,
         bloodGroup,
         allergies = [],
-        medicalConditions = [], // Map medicalConditions to conditions for the prompt
+        medicalConditions = [],
         medications = [],
         riskLevel,
         emergencyContact,
@@ -25,8 +27,7 @@ async function generatePatientSummary(patient) {
     const emergencyContactName = emergencyContact?.name || "Not provided";
     const emergencyContactPhone = emergencyContact?.phone || "Not provided";
 
-    const prompt = `
-Create a short emergency-medical summary for a patient based on the following data.
+    const prompt = `Create a short emergency-medical summary for a patient based on the following data.
 
 Name: ${fullName}
 Age: ${age}
@@ -43,17 +44,23 @@ Instructions:
 - Prioritize risk, allergies, and critical conditions.
 - Use clear language suitable for emergency doctors.
 - If applicable, include critical instructions (e.g., avoid NSAIDs).
-- Do not invent or assume information.
-`;
+- Do not invent or assume information.`;
 
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: "You are a medical assistant that creates concise emergency summaries for healthcare providers." },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 200
+        });
+
+        const text = completion.choices[0].message.content;
         return text;
     } catch (error) {
-        console.error("Gemini AI summary generation failed:", error.message);
+        console.error("OpenAI summary generation failed:", error.message);
         return "";
     }
 }

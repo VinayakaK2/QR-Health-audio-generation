@@ -111,8 +111,29 @@ const patientSchema = new mongoose.Schema({
         type: [String],
         default: []
     },
+    aiAnalysis: {
+        type: mongoose.Schema.Types.Mixed, // Stores full structured analysis Object (Category, Table, Summary, Diagnosis, etc.)
+        default: null
+    },
+    aiRiskLevel: {
+        type: String,
+        enum: ['Low', 'Medium', 'High'],
+        default: 'Low'
+    },
+    aiKeyIssues: {
+        type: [String],
+        default: []
+    },
+    hasAIAnalysis: {
+        type: Boolean,
+        default: false
+    },
     aiLastUpdatedAt: {
         type: Date
+    },
+    aiUpdatedAt: {
+        type: Date,
+        default: null
     },
     isActive: {
         type: Boolean,

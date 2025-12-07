@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from '../api/axios';
 import { useAuth } from '../context/AuthContext';
@@ -12,21 +12,72 @@ const PatientDashboard = () => {
     const [loading, setLoading] = useState(true);
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const intervalRef = useRef(null);
 
     useEffect(() => {
         if (user?.id) {
-            fetchPatientData();
-        }
-    }, [user]);
+            fetchPatientData(); // Initial load
 
-    const fetchPatientData = async () => {
+            // Start polling
+            intervalRef.current = setInterval(() => {
+                fetchPatientData(true);
+            }, 5000); // Poll every 5s
+
+            return () => {
+                if (intervalRef.current) clearInterval(intervalRef.current);
+            };
+        }
+    }, [user?.id]);
+
+    const fetchPatientData = async (silent = false) => {
         try {
-            const response = await axios.get(`/patients/${user.id}`);
-            setPatient(response.data.patient);
+            const token = localStorage.getItem('token');
+            // 1. Fix Auth Headers
+            const config = {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+
+            if (!silent) console.log("DEBUG: Fetching patient data...");
+
+            // 4. Fix Frontend Fetch - Ensure we get all fields
+            const response = await axios.get(`/patients/${user.id}`, config);
+            const data = response.data.patient;
+
+            if (!silent) {
+                console.log("PATIENT DATA FULL:", {
+                    id: data._id,
+                    hasAIAnalysis: data.hasAIAnalysis,
+                    aiSummary: data.aiSummary ? "Present" : "Missing",
+                    aiUpdated: data.aiUpdatedAt
+                });
+            }
+
+            setPatient(data);
+
+            // 2. Fix AI Polling Logic - Stop if analysis exists
+            if (data.hasAIAnalysis) {
+                if (intervalRef.current) {
+                    console.log("DEBUG: AI Analysis found. Stopping polling.");
+                    clearInterval(intervalRef.current);
+                    intervalRef.current = null;
+                }
+            }
+
         } catch (error) {
-            toast.error('Failed to load your data');
+            if (!silent) {
+                if (error.response?.status === 403 || error.response?.status === 401) {
+                    toast.error('Session expired. Please login again.');
+                    logout();
+                } else {
+                    toast.error('Failed to load data');
+                }
+            }
+            console.error("DEBUG: Fetch error", error);
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -179,16 +230,20 @@ const PatientDashboard = () => {
                             <img
                                 src={patient.photoUrl
                                     ? (patient.photoUrl.startsWith('http') ? patient.photoUrl : `${import.meta.env.VITE_API_URL || ''}${patient.photoUrl}`)
-                                    : `https://ui-avatars.com/api/?name=${patient.fullName}&background=0D8ABC&color=fff`
+                                    : '/default-avatar.png'
                                 }
                                 alt={patient.fullName}
                                 className="w-full h-full object-cover"
+                                onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = '/default-avatar.png';
+                                }}
                             />
                         </div>
                     </div>
                 </header>
 
-                <div className="grid grid-cols-1 xl:grid-cols-[500px_1fr] gap-6">
+                <div className="grid grid-cols-1 xl:grid-cols-[60%_40%] gap-6">
                     {/* LEFT COLUMN: Medical ID + Health Overview */}
                     <div className="space-y-8">
                         {/* Medical ID Card Section */}
@@ -379,52 +434,84 @@ const PatientDashboard = () => {
                                 </div>
                             </div>
 
-                            {!patient.aiCombinedSummary ? (
-                                <p className="text-xs text-slate-500">
-                                    No AI suggestions available yet. Your doctor or hospital will upload reports first.
-                                </p>
-                            ) : (
-                                <div className="space-y-4 text-sm text-slate-700">
-                                    {/* Overall summary */}
-                                    {patient.aiCombinedSummary && (
-                                        <div className="rounded-xl bg-sky-50 border border-sky-100 p-3">
-                                            <h3 className="text-xs font-semibold text-sky-800 mb-1">
-                                                Overall Summary
-                                            </h3>
-                                            <p className="text-xs leading-relaxed">
-                                                {patient.aiCombinedSummary}
-                                            </p>
+                            <div className="max-h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar pr-2">
+                                {patient.hasAIAnalysis ? (
+                                    <div className="space-y-4">
+                                        {/* Header / Risk Badge */}
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                                                Analysis Result
+                                            </span>
+                                            {patient.aiRiskLevel && (
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${patient.aiRiskLevel === 'High' ? 'bg-red-50 text-red-600 border-red-100' :
+                                                    patient.aiRiskLevel === 'Medium' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                                                        'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                                    }`}>
+                                                    {patient.aiRiskLevel} Risk
+                                                </span>
+                                            )}
                                         </div>
-                                    )}
 
-                                    {/* Detailed sections */}
-                                    {patient.aiDetailedBreakdown && (
-                                        <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 max-h-64 overflow-y-auto custom-scrollbar">
-                                            <h3 className="text-xs font-semibold text-slate-800 mb-1">
-                                                Report Breakdown
-                                            </h3>
-                                            <div className="whitespace-pre-line text-xs leading-relaxed">
-                                                {patient.aiDetailedBreakdown}
+                                        {/* Summary */}
+                                        {patient.aiSummary && (
+                                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                                <h4 className="text-sm font-bold text-slate-800 mb-2 flex items-center">
+                                                    <span className="mr-2">📝</span> Summary
+                                                </h4>
+                                                <p className="text-sm text-slate-600 leading-relaxed text-justify">
+                                                    {patient.aiSummary}
+                                                </p>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
 
-                                    {/* Lifestyle advice list */}
-                                    {Array.isArray(patient.aiLifestyleAdvice) &&
-                                        patient.aiLifestyleAdvice.length > 0 && (
-                                            <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
-                                                <h3 className="text-xs font-semibold text-emerald-800 mb-1">
-                                                    Lifestyle & Diet Suggestions
-                                                </h3>
-                                                <ul className="list-disc pl-4 space-y-1 text-xs">
-                                                    {patient.aiLifestyleAdvice.map((tip, idx) => (
-                                                        <li key={idx}>{tip}</li>
+                                        {/* Key Issues */}
+                                        {patient.aiKeyIssues && patient.aiKeyIssues.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Key Issues</h4>
+                                                <ul className="space-y-2">
+                                                    {patient.aiKeyIssues.map((issue, i) => (
+                                                        <li key={i} className="flex items-start text-sm text-slate-700 bg-red-50/50 p-2 rounded-lg border border-red-100/50">
+                                                            <span className="mr-2 text-red-500 mt-0.5">⚠️</span>
+                                                            <span className="font-medium">{issue}</span>
+                                                        </li>
                                                     ))}
                                                 </ul>
                                             </div>
                                         )}
-                                </div>
-                            )}
+
+                                        {/* Lifestyle Advice */}
+                                        {patient.aiLifestyleAdvice && patient.aiLifestyleAdvice.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Lifestyle Advice</h4>
+                                                <ul className="space-y-2">
+                                                    {patient.aiLifestyleAdvice.map((advice, i) => (
+                                                        <li key={i} className="flex items-start text-sm text-slate-600 bg-emerald-50/50 p-2 rounded-lg border border-emerald-100/50">
+                                                            <span className="mr-2 text-emerald-500 mt-0.5">🥗</span>
+                                                            <span>{advice}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+
+                                        <div className="text-center pt-4">
+                                            <span className="text-[10px] text-slate-400">
+                                                AI Analysis updated: {patient.aiUpdatedAt ? new Date(patient.aiUpdatedAt).toLocaleString() : 'Just now'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-20 text-center text-slate-400">
+                                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4 text-2xl animate-pulse">
+                                            🤖
+                                        </div>
+                                        <p className="text-sm font-medium text-slate-600">No Analysis Available</p>
+                                        <p className="text-xs mt-2 max-w-[200px]">
+                                            Upload a medical report to generate your personalized AI health insights.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

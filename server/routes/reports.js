@@ -2,7 +2,7 @@ const express = require('express');
 const Report = require('../models/Report');
 const Patient = require('../models/Patient');
 const { authMiddleware, requireHospitalAdmin } = require('../middleware/auth');
-const { analyzeReportText, extractTextFromFile, generateOverallSummary } = require('../src/services/reportAnalyzerService');
+const { analyzeReportWithOpenAI } = require('../src/services/reportAnalyzerService');
 const path = require('path');
 const fs = require('fs');
 
@@ -10,6 +10,92 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(authMiddleware);
+
+// Helper to trigger patient analysis (analyzes the LATEST or SPECIFIC report)
+const triggerPatientAnalysis = async (patientId, reportId = null) => {
+    try {
+        let report;
+        if (reportId) {
+            report = await Report.findById(reportId);
+        } else {
+            // Find latest report
+            report = await Report.findOne({ patient: patientId }).sort({ reportDate: -1 });
+        }
+
+        if (!report || !report.reportFileUrl) {
+            console.log("No report or file found for analysis.");
+            return null;
+        }
+
+        // Construct file path
+        const fileName = report.reportFileUrl.split('/').pop();
+        const filePath = path.join(__dirname, '../uploads', fileName);
+
+        if (!fs.existsSync(filePath)) {
+            console.log("File not found for analysis:", filePath);
+            return null;
+        }
+
+        // Determine mime type
+        const mimeType = fileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
+
+        console.log(`Starting analysis for report: ${fileName}`);
+
+        // Run OpenAI Analysis (handles PDF/image directly)
+        console.log("DEBUG: Analyzing with OpenAI File API...");
+        const aiData = await analyzeReportWithOpenAI(filePath, mimeType);
+
+        if (aiData) {
+            console.log("Saving AI analysis...");
+
+            // A. Update REPORT document
+            report.aiRaw = aiData;
+            report.aiCategory = aiData.reportType;
+            report.aiSummary = aiData.summary;
+            report.riskLevel = aiData.riskLevel;
+            report.parameters = aiData.parameters;
+            report.aiHealthSuggestions = aiData.lifestyleAdvice;
+            report.status = "ANALYZED";
+            report.aiUpdatedAt = new Date();
+            await report.save();
+
+            // B. Update PATIENT document
+            console.log("Saving AI summary for patient:", patientId);
+
+            const aiKeyIssues = aiData.parameters
+                ? aiData.parameters.filter(p => p.status !== "NORMAL").map(p => `${p.name} is ${p.status}`)
+                : [];
+
+            const updatedPatient = await Patient.findByIdAndUpdate(
+                patientId,
+                {
+                    $set: {
+                        hasAIAnalysis: true,
+                        aiSummary: aiData.summary,
+                        aiRiskLevel: aiData.riskLevel,
+                        aiKeyIssues: aiKeyIssues,
+                        aiLifestyleAdvice: aiData.lifestyleAdvice,
+                        aiUpdatedAt: new Date(),
+                        aiLastUpdatedAt: new Date(),
+                        // Legacy support if needed
+                        aiAnalysis: aiData
+                    }
+                },
+                { new: true }
+            );
+
+            console.log("AI UPDATED PATIENT >>>", updatedPatient);
+            return updatedPatient;
+        } else {
+            console.log("DEBUG: Skipping DB update because aiData is null.");
+            return null;
+        }
+
+    } catch (error) {
+        console.error("Error triggering patient analysis:", error);
+        return null;
+    }
+};
 
 // @route   GET /api/reports/patient
 // @desc    Get all reports for the logged-in patient
@@ -24,7 +110,7 @@ router.get('/patient', async (req, res, next) => {
             });
         }
 
-        const patientId = req.userPatientId || req.userId; // Depending on how auth sets it
+        const patientId = req.userPatientId || req.userId;
 
         const reports = await Report.find({ patient: patientId })
             .select('title reportDate reportType aiCategory aiSummary aiHealthSuggestions aiPanels')
@@ -93,12 +179,11 @@ router.post('/', async (req, res, next) => {
         await report.populate('patient', 'fullName bloodGroup');
         await report.populate('createdBy', 'name email');
 
-        // Trigger overall analysis
-        try {
-            triggerOverallAnalysis(patientId); // Intentionally not awaiting to avoid blocking response
-        } catch (err) {
-            console.error("Failed to trigger overall analysis:", err);
-        }
+        // Trigger analysis (ASYNC - don't wait, run in background)
+        // This makes upload fast, AI analysis happens separately
+        triggerPatientAnalysis(patientId, report._id).catch(err => {
+            console.error("Background AI analysis failed:", err);
+        });
 
         res.status(201).json({
             success: true,
@@ -111,13 +196,13 @@ router.post('/', async (req, res, next) => {
 });
 
 // @route   GET /api/reports/patient/:patientId
+
 // @desc    Get all reports for a specific patient
 // @access  Protected (HOSPITAL_ADMIN)
 router.get('/patient/:patientId', async (req, res, next) => {
     try {
         const { patientId } = req.params;
 
-        // Verify patient exists and belongs to hospital admin's hospital
         const patient = await Patient.findById(patientId);
 
         if (!patient) {
@@ -127,17 +212,8 @@ router.get('/patient/:patientId', async (req, res, next) => {
             });
         }
 
-        // Check hospital ownership (skip for SUPER_ADMIN)
         if (req.userRole !== 'SUPER_ADMIN') {
-            if (!patient.hospital || !req.userHospital) {
-                console.error("Missing hospital info:", { patientHospital: patient.hospital, userHospital: req.userHospital });
-                return res.status(403).json({
-                    success: false,
-                    message: 'Access denied: Invalid hospital data'
-                });
-            }
-
-            if (patient.hospital.toString() !== req.userHospital.toString()) {
+            if (!patient.hospital || !req.userHospital || patient.hospital.toString() !== req.userHospital.toString()) {
                 return res.status(403).json({
                     success: false,
                     message: 'Access denied'
@@ -176,7 +252,6 @@ router.get('/:id', async (req, res, next) => {
             });
         }
 
-        // Verify hospital ownership (skip for SUPER_ADMIN)
         if (req.userRole !== 'SUPER_ADMIN') {
             if (report.hospital.toString() !== req.userHospital.toString()) {
                 return res.status(403).json({
@@ -209,7 +284,6 @@ router.put('/:id', async (req, res, next) => {
             });
         }
 
-        // Verify hospital ownership (skip for SUPER_ADMIN)
         if (req.userRole !== 'SUPER_ADMIN') {
             if (report.hospital.toString() !== req.userHospital.toString()) {
                 return res.status(403).json({
@@ -219,7 +293,6 @@ router.put('/:id', async (req, res, next) => {
             }
         }
 
-        // Update allowed fields
         const { title, description, reportType, reportDate, reportFileUrl } = req.body;
 
         if (title) report.title = title;
@@ -232,11 +305,11 @@ router.put('/:id', async (req, res, next) => {
         await report.populate('patient', 'fullName bloodGroup');
         await report.populate('createdBy', 'name email');
 
-        // Trigger overall analysis
+        // Trigger analysis
         try {
-            triggerOverallAnalysis(report.patient._id || report.patient); // Intentionally not awaiting
+            triggerPatientAnalysis(report.patient._id || report.patient, report._id); // Async
         } catch (err) {
-            console.error("Failed to trigger overall analysis:", err);
+            console.error("Failed to trigger analysis:", err);
         }
 
         res.json({
@@ -263,7 +336,6 @@ router.delete('/:id', async (req, res, next) => {
             });
         }
 
-        // Verify hospital ownership (skip for SUPER_ADMIN)
         if (req.userRole !== 'SUPER_ADMIN') {
             if (report.hospital.toString() !== req.userHospital.toString()) {
                 return res.status(403).json({
@@ -284,119 +356,8 @@ router.delete('/:id', async (req, res, next) => {
     }
 });
 
-// @route   POST /api/reports/ai-validate
-// @desc    Analyze report content using AI
-// @access  Protected (HOSPITAL_ADMIN)
-router.post('/ai-validate', async (req, res, next) => {
-    try {
-        console.log("AI Validate Request Body:", JSON.stringify(req.body, null, 2));
-        const { uploadedFiles } = req.body;
-
-        if (!uploadedFiles || uploadedFiles.length === 0) {
-            console.log("Error: No uploaded files metadata");
-            return res.status(400).json({
-                success: false,
-                message: 'Uploaded files metadata is required'
-            });
-        }
-
-        const fileMeta = uploadedFiles[0]; // Analyze the first file for now
-        if (!fileMeta.fileUrl) {
-            console.log("Error: No fileUrl in metadata");
-            return res.status(400).json({
-                success: false,
-                message: 'File URL is required for analysis'
-            });
-        }
-
-        // Construct local path from URL (assuming /uploads/filename format)
-        // URL: http://localhost:5000/uploads/filename
-        const fileName = fileMeta.fileUrl.split('/').pop();
-        // FIXED PATH: uploads is in server/uploads, which is ../uploads from server/routes
-        const filePath = path.join(__dirname, '../uploads', fileName);
-
-        console.log("Looking for file at:", filePath);
-
-        if (!fs.existsSync(filePath)) {
-            console.log("Error: File not found at path");
-            return res.status(404).json({
-                success: false,
-                message: 'File not found on server'
-            });
-        }
-
-        // Extract text
-        const rawText = await extractTextFromFile(filePath, fileMeta.mimeType);
-
-        if (!rawText || rawText.trim().length < 20) {
-            console.log("Insufficient text extracted from file.");
-            return res.json({
-                success: true,
-                validationResult: {
-                    reportCategory: "Unknown",
-                    detectedPanels: [],
-                    keyFindings: "Could not extract readable text from this file. It might be a scanned document without OCR text."
-                }
-            });
-        }
-
-        // Analyze
-        const validationResult = await analyzeReportText(rawText, fileName);
-
-        res.json({
-            success: true,
-            validationResult
-        });
-
-    } catch (error) {
-        console.error("Analysis failed:", error);
-        // Return empty/unknown result instead of erroring out
-        res.json({
-            success: true,
-            validationResult: {
-                reportCategory: "Unknown",
-                detectedPanels: [],
-                keyFindings: "Analysis failed."
-            }
-        });
-    }
-});
-
-// Helper to trigger overall analysis
-const triggerOverallAnalysis = async (patientId) => {
-    try {
-        const reports = await Report.find({ patient: patientId })
-            .select('title reportDate reportType aiCategory aiSummary aiHealthSuggestions aiPanels')
-            .sort({ reportDate: -1 });
-
-        if (reports.length > 0) {
-            const analysisResult = await generateOverallSummary(reports);
-
-            if (analysisResult) {
-                await Patient.findByIdAndUpdate(patientId, {
-                    aiCombinedSummary: analysisResult.overallSummary,
-                    aiDetailedBreakdown: analysisResult.combinedSections + "\n\n" + analysisResult.finalConclusionTable + "\n\n### WHAT NEEDS ATTENTION\n" + (analysisResult.whatNeedsAttention || ""), // merging for display simplicity if needed, or keeping separate. The prompt returns specific fields.
-                    // Wait, the prompt returns: overallSummary, combinedSections, finalConclusionTable, lifestyleAdvice.
-                    // The user wants: aiCombinedSummary, aiDetailedBreakdown, aiLifestyleAdvice.
-                    // Let's map them:
-                    // aiCombinedSummary -> overallSummary
-                    // aiDetailedBreakdown -> combinedSections + finalConclusionTable (or just combinedSections, and we render table separately? The user said "Show aiDetailedBreakdown in structured bullet sections exactly like example". The example includes the table and "What needs attention".
-                    // Let's combine the detailed parts into aiDetailedBreakdown for now, or better yet, store the raw JSON if we could, but schema is String.
-                    // Let's store the "combinedSections" + "finalConclusionTable" in aiDetailedBreakdown.
-                    aiDetailedBreakdown: analysisResult.combinedSections + "\n\n" + analysisResult.finalConclusionTable,
-                    aiLifestyleAdvice: analysisResult.lifestyleAdvice,
-                    aiLastUpdatedAt: new Date()
-                });
-                console.log(`Overall analysis updated for patient ${patientId}`);
-            }
-        }
-    } catch (error) {
-        console.error("Error triggering overall analysis:", error);
-    }
-};
-
 // @route   POST /api/reports/overall-analysis
-// @desc    Manually trigger overall analysis
+// @desc    Manually trigger latest report analysis
 // @access  Protected (HOSPITAL_ADMIN)
 router.post('/overall-analysis', async (req, res, next) => {
     try {
@@ -405,11 +366,9 @@ router.post('/overall-analysis', async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'Patient ID required' });
         }
 
-        // Trigger analysis (async, don't wait for response to be fast, or wait? User said "Show Re-Analyzing loader". 
-        // If we call this from frontend, we might want to wait.)
-        await triggerOverallAnalysis(patientId);
+        await triggerPatientAnalysis(patientId);
 
-        const updatedPatient = await Patient.findById(patientId).select('aiCombinedSummary aiDetailedBreakdown aiLifestyleAdvice aiLastUpdatedAt');
+        const updatedPatient = await Patient.findById(patientId).select('aiAnalysis aiLastUpdatedAt');
 
         res.json({
             success: true,

@@ -56,6 +56,32 @@ const reportSchema = new mongoose.Schema({
     aiHealthSuggestions: {
         type: [String],
         default: []
+    },
+    aiRawText: {
+        type: String, // Store extracted text to allow re-analysis without PDF parsing
+        select: false // Optimization: Don't select by default
+    },
+    aiRaw: {
+        type: mongoose.Schema.Types.Mixed // Full JSON from AI
+    },
+    riskLevel: {
+        type: String,
+        enum: ['Low', 'Medium', 'High']
+    },
+    parameters: [{
+        name: String,
+        value: mongoose.Schema.Types.Mixed,
+        unit: String,
+        normalRange: String,
+        status: String // HIGH, LOW, NORMAL
+    }],
+    aiUpdatedAt: {
+        type: Date
+    },
+    status: {
+        type: String,
+        default: 'PENDING', // PENDING, ANALYZED, FAILED
+        enum: ['PENDING', 'ANALYZED', 'FAILED']
     }
 }, {
     timestamps: true

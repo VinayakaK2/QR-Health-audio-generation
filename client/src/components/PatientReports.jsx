@@ -257,7 +257,7 @@ const PatientReports = ({ patientId }) => {
 
                         <div className="flex space-x-3">
                             <button type="submit" className="btn-primary" disabled={uploading}>
-                                {uploading ? 'Success...' : (editingReport ? 'Update Report' : 'Create Report')}
+                                {uploading ? 'Uploading...' : (editingReport ? 'Update Report' : 'Create Report')}
                             </button>
                             <button type="button" onClick={handleCancel} className="btn-outline">
                                 Cancel
