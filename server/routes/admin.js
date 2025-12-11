@@ -82,7 +82,25 @@ router.post('/requests/:id/approve', authMiddleware, ensureSuperAdmin, async (re
             });
         }
 
+        // CRITICAL FIX: Handle faceDescriptor separately because it's marked select:false
+        console.log('=== FACE ENROLLMENT APPROVAL ===');
+        console.log('Requested Changes:', request.requestedChanges);
+
+        // Safety: Remove empty password from changes to prevent overwriting existing hash
+        if (request.requestedChanges.password === '' || request.requestedChanges.password === null) {
+            delete request.requestedChanges.password;
+        }
+
+        // Apply all changes
         Object.assign(patient, request.requestedChanges);
+
+        // Explicitly set faceDescriptor if provided (CRITICAL for face auth)
+        if (request.requestedChanges.faceDescriptor) {
+            patient.faceDescriptor = request.requestedChanges.faceDescriptor;
+            console.log('✅ Face descriptor explicitly set, length:', patient.faceDescriptor.length);
+        } else {
+            console.log('⚠️ No face descriptor in request');
+        }
 
         // Generate AI Summary on approval
         try {
@@ -96,6 +114,7 @@ router.post('/requests/:id/approve', authMiddleware, ensureSuperAdmin, async (re
         }
 
         await patient.save();
+        console.log('✅ Patient saved with face data');
 
         // Update request status
         request.status = 'APPROVED';

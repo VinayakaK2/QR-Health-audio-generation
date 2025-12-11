@@ -46,6 +46,7 @@ const Login = () => {
                 };
 
                 // Use the new dedicated patient login endpoint
+                console.log('Sending patient login request to: /auth/patient-login');
                 const response = await axios.post('/auth/patient-login', payload);
 
                 if (response.data.token) {
@@ -95,7 +96,7 @@ const Login = () => {
     const fillPatientCredentials = () => {
         setLoginType('patient');
         setEmail('john.doe.414@example.com');
-        setPassword('password123');
+        setPassword('patient123');
     };
 
     return (

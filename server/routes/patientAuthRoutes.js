@@ -39,6 +39,8 @@ router.post('/patient-login', async (req, res) => {
         const isMatch = await bcrypt.compare(password, patient.password);
         if (!isMatch) {
             console.log('Password mismatch for:', email);
+            // console.log('Stored Hash (startswith):', patient.password ? patient.password.substring(0, 15) : 'NULL');
+            // console.log('Input Password:', password);
             return res.status(400).json({ message: 'Invalid password' });
         }
 
@@ -47,7 +49,14 @@ router.post('/patient-login', async (req, res) => {
         // 1. Check if patient is enrolled (has face data)
         const hasEnrolledFace = patient.faceDescriptor && patient.faceDescriptor.length > 0;
 
+        console.log('=== FACE AUTH DEBUG ===');
+        console.log('Patient Email:', email);
+        console.log('Has Face Descriptor:', !!patient.faceDescriptor);
+        console.log('Face Descriptor Length:', patient.faceDescriptor ? patient.faceDescriptor.length : 0);
+        console.log('Has Enrolled Face:', hasEnrolledFace);
+
         if (!hasEnrolledFace) {
+            console.log('❌ Face enrollment required - no face data found');
             return res.status(403).json({
                 message: 'Face enrollment required. Please contact hospital administration to set up face login.'
             });
@@ -55,9 +64,12 @@ router.post('/patient-login', async (req, res) => {
 
         // 2. Check if face data is provided in request
         const { faceDescriptor } = req.body;
+        console.log('Face Descriptor in Request:', !!faceDescriptor);
+        console.log('Request Face Descriptor Length:', faceDescriptor ? faceDescriptor.length : 0);
 
         if (!faceDescriptor) {
             // Client needs to perform face scan
+            console.log('⚠️ No face descriptor in request - client needs to scan');
             return res.status(403).json({
                 requireFaceAuth: true,
                 message: 'Face verification required'
@@ -67,13 +79,18 @@ router.post('/patient-login', async (req, res) => {
         // 3. Verify Face
         const faceAuthService = require('../services/faceAuthService');
         try {
+            console.log('🔍 Attempting face verification...');
             const isFaceMatch = await faceAuthService.verifyFace(patient.faceDescriptor, faceDescriptor);
+            console.log('Face Match Result:', isFaceMatch);
 
             if (!isFaceMatch) {
+                console.log('❌ Face verification failed');
                 return res.status(401).json({ message: 'Face verification failed. Please try again.' });
             }
+
+            console.log('✅ Face verification successful!');
         } catch (faceError) {
-            console.error("Face auth error:", faceError);
+            console.error("❌ Face auth error:", faceError);
             return res.status(500).json({ message: 'Error verifying face identity' });
         }
 

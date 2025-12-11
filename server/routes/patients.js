@@ -173,6 +173,16 @@ router.put('/:id', authMiddleware, async (req, res, next) => {
         // Update fields (except qrToken and hospital)
         const { qrToken, hospital, ...updateData } = req.body;
 
+        // CRITICAL FIX: Remove sensitive fields if they are empty/null to prevent overwriting existing data
+        if (!updateData.password) {
+            delete updateData.password;
+        }
+
+        // Ensure we don't accidentally wipe face descriptor with empty data
+        if (updateData.faceDescriptor && updateData.faceDescriptor.length === 0) {
+            delete updateData.faceDescriptor;
+        }
+
         // If HOSPITAL_ADMIN, create edit request instead of updating directly
         if (req.userRole === 'HOSPITAL_ADMIN') {
             const editRequest = new PatientEditRequest({
