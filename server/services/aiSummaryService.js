@@ -1,68 +1,218 @@
 const OpenAI = require('openai');
+const fs = require('fs');
+const pdf = require('pdf-parse');
+const path = require('path');
 
-// Initialize OpenAI
 const openai = process.env.OPENAI_API_KEY
     ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     : null;
 
-async function generatePatientSummary(patient) {
-    if (!openai) {
-        console.warn("OPENAI_API_KEY not set – skipping AI summary.");
-        return "";
-    }
-
-    const {
-        fullName,
-        age,
-        gender,
-        bloodGroup,
-        allergies = [],
-        medicalConditions = [],
-        medications = [],
-        riskLevel,
-        emergencyContact,
-    } = patient;
-
-    const conditions = medicalConditions;
-    const emergencyContactName = emergencyContact?.name || "Not provided";
-    const emergencyContactPhone = emergencyContact?.phone || "Not provided";
-
-    const prompt = `Create a short emergency-medical summary for a patient based on the following data.
-
-Name: ${fullName}
-Age: ${age}
-Gender: ${gender}
-Blood group: ${bloodGroup}
-Risk Level: ${riskLevel}
-Allergies: ${allergies.length ? allergies.join(", ") : "None"}
-Medical Conditions: ${conditions.length ? conditions.join(", ") : "None"}
-Medications: ${medications.length ? medications.join(", ") : "None"}
-Emergency Contact: ${emergencyContactName} (${emergencyContactPhone})
-
-Instructions:
-- Keep 4 to 6 lines maximum.
-- Prioritize risk, allergies, and critical conditions.
-- Use clear language suitable for emergency doctors.
-- If applicable, include critical instructions (e.g., avoid NSAIDs).
-- Do not invent or assume information.`;
-
+// Helper to extract text from PDF
+async function extractTextFromPDF(filePath) {
     try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                { role: "system", content: "You are a medical assistant that creates concise emergency summaries for healthcare providers." },
-                { role: "user", content: prompt }
-            ],
-            temperature: 0.3,
-            max_tokens: 200
-        });
-
-        const text = completion.choices[0].message.content;
-        return text;
+        const dataBuffer = fs.readFileSync(filePath);
+        const data = await pdf(dataBuffer);
+        return data.text.substring(0, 10000); // Limit text to avoid token limits
     } catch (error) {
-        console.error("OpenAI summary generation failed:", error.message);
-        return "";
+        console.error("PDF Extraction Error:", error.message);
+        return "Error extracting text from report.";
     }
 }
 
-module.exports = { generatePatientSummary };
+async function generatePatientSummary(patient, reportFilePath = null) {
+    if (!openai) {
+        console.log("Skipping AI Summary: No API Key");
+        return null; // Fail gracefully
+    }
+
+    try {
+        console.log(`Generating AI Summary for ${patient.name}...`);
+
+        // 1. Prepare Patient Context
+        const patientContext = {
+            name: patient.name, // Anonymize? User prompt says "one patient's data"
+            age: patient.age,
+            gender: patient.gender,
+            bloodGroup: patient.bloodGroup,
+            allergies: patient.allergies,
+            conditions: patient.medicalConditions,
+            medications: patient.medications,
+            riskLevel: patient.riskLevel,
+            emergencyContact: patient.emergencyContact ? "Present" : "Missing"
+        };
+
+        const patientJson = JSON.stringify(patientContext, null, 2);
+
+        // 2. Prepare Report Content
+        let reportContent = "No recent medical report provided.";
+        if (reportFilePath && fs.existsSync(reportFilePath)) {
+            const ext = path.extname(reportFilePath).toLowerCase();
+            if (ext === '.pdf') {
+                reportContent = await extractTextFromPDF(reportFilePath);
+            } else {
+                reportContent = "[Image Report - Text extraction not supported in summary service]";
+            }
+        }
+
+        // 3. Construct Prompt (USER PROVIDED STRUCTURE)
+        const systemPrompt = `You are Smart QR Health's clinical assistant AI. You will receive a JSON object containing ONLY one patient’s data and the extracted text of their medical report. Your job is to analyze the data and RETURN ONLY ONE JSON OBJECT that EXACTLY MATCHES the schema below. Do NOT output anything outside the JSON. Do NOT add or remove fields. Do NOT explain yourself. If data is missing for a required field, return "" or [].
+
+OUTPUT SCHEMA (must match exactly):
+{
+  "aiSummary": "<2-4 sentence patient-friendly summary>",
+  "aiRiskLevel": "Low | Medium | High",
+  "aiKeyIssues": ["<string>", "..."],
+  "aiLifestyleAdvice": ["<string>", "..."],
+  "aiAnalysis": {
+    "reportType": "<string>",
+    "parameters": [
+      {
+        "name": "<string>",
+        "value": "<string|number>",
+        "unit": "<string>",
+        "normalRange": "<string>",
+        "status": "LOW | NORMAL | HIGH"
+      }
+    ],
+    "notes": "<string>"
+  },
+  "aiUpdatedAt": "<ISO8601 timestamp>"
+}
+
+RULES:
+- Use ONLY the data provided below (patient JSON + report text).
+- Do NOT hallucinate any medical values that are not present.
+- aiSummary must be patient-friendly, simple English.
+- If aiRiskLevel is Medium or High, append this sentence to aiSummary:
+  "Not a medical diagnosis; consult your physician if concerned."
+- aiKeyIssues must list only abnormal values (status ≠ NORMAL).
+- aiLifestyleAdvice must be actionable, short, and patient-facing.
+- If normal ranges are unclear, infer conservatively or mark status as NORMAL.
+- If you cannot confidently produce correct JSON, return:
+  {
+    "aiSummary": "AI summary temporarily unavailable. Please try again later.",
+    "aiRiskLevel": "Low",
+    "aiKeyIssues": [],
+    "aiLifestyleAdvice": [],
+    "aiAnalysis": { "reportType": "Analysis Unavailable", "parameters": [], "notes": "" },
+    "aiUpdatedAt": "<ISO8601 timestamp>"
+  }`;
+
+        const userPrompt = `PATIENT DATA (JSON):
+${patientJson}
+
+REPORT CONTENT:
+${reportContent}
+
+Now analyze and return ONLY the JSON object in the exact schema above.`;
+
+        // 4. Call OpenAI
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 1500
+        });
+
+        const responseText = completion.choices[0].message.content;
+
+        // 5. Parse and Return
+        const parsedData = JSON.parse(responseText);
+
+        // Ensure timestamp is set
+        parsedData.aiUpdatedAt = new Date().toISOString();
+
+        return {
+            success: true,
+            data: parsedData
+        };
+
+    } catch (error) {
+        console.error("AI Summary Service Error:", error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+// Helper to determine next retry interval
+function getNextRetryDate(retryCount) {
+    const now = new Date();
+    if (retryCount === 0) return new Date(now.getTime() + 2 * 60000); // 2 mins
+    if (retryCount === 1) return new Date(now.getTime() + 5 * 60000); // 5 mins
+    return new Date(now.getTime() + 10 * 60000); // 10 mins thereafter
+}
+
+// Public wrapper to handle DB updates and Retries
+async function processPatientJob(patientId) {
+    const Patient = require('../models/Patient');
+    const Report = require('../models/Report');
+
+    console.log(`Processing AI Job for Patient: ${patientId}`);
+
+    try {
+        const patient = await Patient.findById(patientId);
+        if (!patient) return;
+
+        // Fetch latest report
+        const latestReport = await Report.findOne({ patient: patientId, reportFileUrl: { $ne: '' } }).sort({ reportDate: -1 });
+        let reportFilePath = null;
+        if (latestReport && latestReport.reportFileUrl) {
+            // Assume uploads dir is ../uploads relative to this service file? 
+            // Service is in server/services. Uploads is server/uploads. ../uploads is correct.
+            const fileName = latestReport.reportFileUrl.split('/').pop();
+            reportFilePath = path.join(__dirname, '../uploads', fileName);
+        }
+
+        // Call Core Generation
+        const aiResult = await generatePatientSummary(patient, reportFilePath);
+
+        if (aiResult.success && aiResult.data) {
+            // SUCCESS
+            const data = aiResult.data;
+
+            await Patient.findByIdAndUpdate(patientId, {
+                $set: {
+                    aiSummary: data.aiSummary,
+                    aiRiskLevel: data.aiRiskLevel,
+                    aiKeyIssues: data.aiKeyIssues,
+                    aiLifestyleAdvice: data.aiLifestyleAdvice,
+                    aiAnalysis: data.aiAnalysis,
+                    hasAIAnalysis: true,
+                    aiUpdatedAt: new Date(),
+                    aiLastUpdatedAt: new Date(),
+                    aiGenStatus: 'SUCCESS',
+                    aiNextRetryAt: null, // Clear retry
+                    aiRetryCount: 0
+                }
+            });
+            console.log(`✅ AI Summary Generated & Saved for ${patient.name}`);
+        } else {
+            throw new Error(aiResult.error || "Unknown AI Error");
+        }
+
+    } catch (error) {
+        console.error(`❌ AI Processing Failed for ${patientId}:`, error.message);
+
+        // SCHEDULE RETRY
+        const Patient = require('../models/Patient'); // Re-require if scope issue, but locally defined above is fine.
+        const p = await Patient.findById(patientId);
+        if (p) {
+            const currentCount = p.aiRetryCount || 0;
+            const nextRetry = getNextRetryDate(currentCount);
+
+            await Patient.findByIdAndUpdate(patientId, {
+                $set: {
+                    aiGenStatus: 'FAILED',
+                    aiRetryCount: currentCount + 1,
+                    aiNextRetryAt: nextRetry
+                }
+            });
+            console.log(`🔄 Scheduled Retry #${currentCount + 1} at ${nextRetry.toISOString()}`);
+        }
+    }
+}
+
+module.exports = { generatePatientSummary, processPatientJob };

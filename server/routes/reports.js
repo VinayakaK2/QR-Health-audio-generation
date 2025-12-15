@@ -153,11 +153,16 @@ router.post('/', async (req, res, next) => {
 
         // Check hospital ownership (skip for SUPER_ADMIN)
         if (req.userRole !== 'SUPER_ADMIN') {
-            if (patient.hospital.toString() !== req.userHospital.toString()) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'You can only create reports for patients in your hospital'
-                });
+            // Allow if patient is creating their own report
+            const isOwnReport = req.userRole === 'PATIENT' && req.userId === patientId;
+
+            if (!isOwnReport) {
+                if (!req.userHospital || patient.hospital.toString() !== req.userHospital.toString()) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Access denied'
+                    });
+                }
             }
         }
 
@@ -213,11 +218,16 @@ router.get('/patient/:patientId', async (req, res, next) => {
         }
 
         if (req.userRole !== 'SUPER_ADMIN') {
-            if (!patient.hospital || !req.userHospital || patient.hospital.toString() !== req.userHospital.toString()) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'Access denied'
-                });
+            // Allow if patient is viewing their own reports
+            const isOwnReports = req.userRole === 'PATIENT' && req.userId === patientId;
+
+            if (!isOwnReports) {
+                if (!patient.hospital || !req.userHospital || patient.hospital.toString() !== req.userHospital.toString()) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Access denied'
+                    });
+                }
             }
         }
 

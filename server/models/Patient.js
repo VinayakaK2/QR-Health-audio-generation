@@ -138,6 +138,20 @@ const patientSchema = new mongoose.Schema({
     isActive: {
         type: Boolean,
         default: true
+    },
+    // AI Generation Status & Retry Logic
+    aiGenStatus: {
+        type: String,
+        enum: ['PENDING', 'SUCCESS', 'FAILED'],
+        default: 'PENDING'
+    },
+    aiRetryCount: {
+        type: Number,
+        default: 0
+    },
+    aiNextRetryAt: {
+        type: Date,
+        default: null
     }
 }, {
     timestamps: true

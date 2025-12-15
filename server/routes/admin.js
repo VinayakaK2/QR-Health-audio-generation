@@ -2,7 +2,9 @@ const express = require('express');
 const Patient = require('../models/Patient');
 const PatientEditRequest = require('../models/PatientEditRequest');
 const { authMiddleware } = require('../middleware/auth');
-const { generatePatientSummary } = require('../services/aiSummaryService');
+
+
+const { generatePatientSummary, processPatientJob } = require('../services/aiSummaryService');
 
 const router = express.Router();
 
@@ -102,19 +104,18 @@ router.post('/requests/:id/approve', authMiddleware, ensureSuperAdmin, async (re
             console.log('⚠️ No face descriptor in request');
         }
 
-        // Generate AI Summary on approval
-        try {
-            const summary = await generatePatientSummary(patient);
-            if (summary) {
-                patient.aiSummary = summary;
-                patient.aiLastUpdatedAt = new Date();
-            }
-        } catch (error) {
-            console.error("AI summary generation failed:", error.message);
-        }
 
-        await patient.save();
+
+        await patient.save(); // Save first (including face data)
         console.log('✅ Patient saved with face data');
+
+        // Trigger AI Job
+        try {
+            await processPatientJob(patient._id);
+        } catch (err) {
+            console.log("AI Job Trigger Warning:", err.message);
+            // Don't fail the approval if AI fails, works in background/retry
+        }
 
         // Update request status
         request.status = 'APPROVED';

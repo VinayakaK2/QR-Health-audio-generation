@@ -67,6 +67,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/health-buddy', require('./routes/healthBuddy'));
 
 // Health check route
 app.get('/api/health', (req, res) => {

@@ -95,7 +95,7 @@ const Login = () => {
 
     const fillPatientCredentials = () => {
         setLoginType('patient');
-        setEmail('john.doe.414@example.com');
+        setEmail('john.doe.330@example.com');
         setPassword('patient123');
     };
 

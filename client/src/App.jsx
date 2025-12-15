@@ -18,6 +18,7 @@ import AdminRequests from './pages/AdminRequests';
 import HospitalIdCards from './pages/HospitalIdCards';
 
 import PatientDashboard from './pages/PatientDashboardWithChatbot';
+import HealthBuddy from './pages/HealthBuddy';
 
 function App() {
     return (
@@ -100,6 +101,7 @@ function App() {
                     {/* Patient Portal Routes */}
 
                     <Route path="/patient/dashboard" element={<ProtectedRoute allowedRoles={['PATIENT']}><PatientDashboard /></ProtectedRoute>} />
+                    <Route path="/health-buddy" element={<ProtectedRoute allowedRoles={['PATIENT']}><HealthBuddy /></ProtectedRoute>} />
 
                     {/* Hospital Admin Protected Routes */}
                     <Route

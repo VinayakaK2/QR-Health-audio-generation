@@ -5,7 +5,10 @@ const fs = require('fs').promises;
 const Patient = require('../models/Patient');
 const PatientEditRequest = require('../models/PatientEditRequest');
 const { authMiddleware } = require('../middleware/auth');
-const { generatePatientSummary } = require('../services/aiSummaryService');
+
+
+const { generatePatientSummary, processPatientJob } = require('../services/aiSummaryService');
+// const Report ... (Removed, handled by service)
 
 const router = express.Router();
 
@@ -125,18 +128,12 @@ router.post('/', authMiddleware, async (req, res, next) => {
         // Update patient with QR code URL
         patient.qrCodeUrl = `/uploads/${qrFileName}`;
 
-        // Generate AI Summary
-        try {
-            const summary = await generatePatientSummary(patient);
-            if (summary) {
-                patient.aiSummary = summary;
-                patient.aiLastUpdatedAt = new Date();
-            }
-        } catch (error) {
-            console.error("AI summary generation failed:", error.message);
-        }
+
 
         await patient.save();
+
+        // Trigger AI Job (Async, await to ensure completion or fail-to-schedule logic runs)
+        await processPatientJob(patient._id);
 
         res.status(201).json({
             success: true,
@@ -159,6 +156,16 @@ router.put('/:id', authMiddleware, async (req, res, next) => {
         // Hospital admins can only update their own patients
         if (req.userRole === 'HOSPITAL_ADMIN') {
             filter.hospital = req.userHospital;
+        }
+
+        // Patients can only update themselves
+        if (req.userRole === 'PATIENT') {
+            if (req.params.id !== req.userId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied. You can only update your own profile.'
+                });
+            }
         }
 
         const patient = await Patient.findOne(filter);
@@ -203,18 +210,10 @@ router.put('/:id', authMiddleware, async (req, res, next) => {
         // If SUPER_ADMIN, update directly
         Object.assign(patient, updateData);
 
-        // Generate AI Summary on update
-        try {
-            const summary = await generatePatientSummary(patient);
-            if (summary) {
-                patient.aiSummary = summary;
-                patient.aiLastUpdatedAt = new Date();
-            }
-        } catch (error) {
-            console.error("AI summary generation failed:", error.message);
-        }
-
         await patient.save();
+
+        // Trigger AI Update
+        await processPatientJob(patient._id);
 
         res.json({
             success: true,
