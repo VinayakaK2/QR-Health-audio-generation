@@ -341,7 +341,7 @@ const PatientDashboard = () => {
                                                         <img
                                                             src={patient.photoUrl.startsWith('http') ? patient.photoUrl : `${import.meta.env.VITE_API_URL || ''}${patient.photoUrl}`}
                                                             alt="Profile"
-                                                            crossOrigin="anonymous"
+                                                            // crossOrigin="anonymous" // Removed to fix CORS error with randomuser.me
                                                             className="w-full h-full object-cover"
                                                             onError={(e) => {
                                                                 e.target.onerror = null;

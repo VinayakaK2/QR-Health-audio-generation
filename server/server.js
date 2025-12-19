@@ -82,9 +82,29 @@ app.get('/api/health', (req, res) => {
 app.use(errorHandler);
 
 // Start server
+// Create HTTP server and integrate Socket.io
+const http = require('http');
+const server = http.createServer(app);
+const io = require('socket.io')(server, {
+    cors: {
+        origin: "*", // Allow connections from any origin (configure for prod)
+        methods: ["GET", "POST"]
+    }
+});
+
+// Initialize AI Avatar Service
+try {
+    require('./services/aiAvatarService')(io);
+    console.log('✅ AI Avatar Service initialized');
+} catch (error) {
+    console.error('⚠️ Failed to initialize AI Avatar Service:', error.message);
+}
+
+// Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📡 API: http://localhost:${PORT}/api`);
     console.log(`🏥 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔌 Socket.io ready`);
 });

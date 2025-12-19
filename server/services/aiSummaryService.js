@@ -29,14 +29,20 @@ async function generatePatientSummary(patient, reportFilePath = null) {
         console.log(`Generating AI Summary for ${patient.name}...`);
 
         // 1. Prepare Patient Context
+        // Helper to clean arrays (remove "None", empty strings)
+        const cleanArray = (arr) => {
+            if (!arr || !Array.isArray(arr)) return [];
+            return arr.filter(item => item && item !== "None" && item.trim() !== "");
+        };
+
         const patientContext = {
-            name: patient.name, // Anonymize? User prompt says "one patient's data"
+            name: patient.name,
             age: patient.age,
             gender: patient.gender,
             bloodGroup: patient.bloodGroup,
-            allergies: patient.allergies,
-            conditions: patient.medicalConditions,
-            medications: patient.medications,
+            allergies: cleanArray(patient.allergies),
+            conditions: cleanArray(patient.medicalConditions),
+            medications: cleanArray(patient.medications),
             riskLevel: patient.riskLevel,
             emergencyContact: patient.emergencyContact ? "Present" : "Missing"
         };
@@ -55,7 +61,7 @@ async function generatePatientSummary(patient, reportFilePath = null) {
         }
 
         // 3. Construct Prompt (USER PROVIDED STRUCTURE)
-        const systemPrompt = `You are Smart QR Health's clinical assistant AI. You will receive a JSON object containing ONLY one patient’s data and the extracted text of their medical report. Your job is to analyze the data and RETURN ONLY ONE JSON OBJECT that EXACTLY MATCHES the schema below. Do NOT output anything outside the JSON. Do NOT add or remove fields. Do NOT explain yourself. If data is missing for a required field, return "" or [].
+        const systemPrompt = `You are Smart QR Health's clinical assistant AI. You will receive a JSON object containing one patient’s data and possibly the extracted text of their medical report. Your job is to analyze the data and RETURN ONLY ONE JSON OBJECT that EXACTLY MATCHES the schema below. 
 
 OUTPUT SCHEMA (must match exactly):
 {
@@ -64,7 +70,7 @@ OUTPUT SCHEMA (must match exactly):
   "aiKeyIssues": ["<string>", "..."],
   "aiLifestyleAdvice": ["<string>", "..."],
   "aiAnalysis": {
-    "reportType": "<string>",
+    "reportType": "<string or 'General Profile'>",
     "parameters": [
       {
         "name": "<string>",
@@ -80,23 +86,13 @@ OUTPUT SCHEMA (must match exactly):
 }
 
 RULES:
-- Use ONLY the data provided below (patient JSON + report text).
-- Do NOT hallucinate any medical values that are not present.
+- If a medical report IS provided, base your analysis primarily on that.
+- If NO medical report is provided (or it says "No recent medical report"), you MUST generate the analysis based on the patient's PROFILE (Age, Gender, Conditions, Medications, Allergies). Do NOT return "Unavailable".
+- If the patient has no specific conditions/medications/reports, provide general healthy lifestyle advice for their age/gender group.
 - aiSummary must be patient-friendly, simple English.
-- If aiRiskLevel is Medium or High, append this sentence to aiSummary:
-  "Not a medical diagnosis; consult your physician if concerned."
-- aiKeyIssues must list only abnormal values (status ≠ NORMAL).
+- aiKeyIssues must list abnormal values (status ≠ NORMAL) OR known conditions/allergies.
 - aiLifestyleAdvice must be actionable, short, and patient-facing.
-- If normal ranges are unclear, infer conservatively or mark status as NORMAL.
-- If you cannot confidently produce correct JSON, return:
-  {
-    "aiSummary": "AI summary temporarily unavailable. Please try again later.",
-    "aiRiskLevel": "Low",
-    "aiKeyIssues": [],
-    "aiLifestyleAdvice": [],
-    "aiAnalysis": { "reportType": "Analysis Unavailable", "parameters": [], "notes": "" },
-    "aiUpdatedAt": "<ISO8601 timestamp>"
-  }`;
+- If you cannot confidentally produce specific parameters, return an empty list for "parameters".`;
 
         const userPrompt = `PATIENT DATA (JSON):
 ${patientJson}

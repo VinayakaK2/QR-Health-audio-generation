@@ -1,0 +1,12 @@
+✅ Patient Found: John Doe
+--- Medical Data ---
+Allergies: ["Peanuts"]
+Conditions: ["None"]
+Medications: ["None"]
+--- AI Data Status ---
+hasAIAnalysis: true
+aiRiskLevel: Low
+aiSummary: You are a 30-year-old male with no current medical conditions or medications. You have a peanut allergy, so be careful with foods that may contain peanuts.
+aiKeyIssues: ["Peanut allergy"]
+aiLifestyleAdvice: ["Maintain a balanced diet","Exercise regularly","Stay hydrated","Avoid peanuts and products containing them"]
+aiAnalysis Object Keys: ["reportType","parameters","notes"]

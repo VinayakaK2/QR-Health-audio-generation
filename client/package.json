@@ -9,15 +9,19 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "@met4citizen/talkinghead": "^1.7.0",
         "axios": "^1.6.2",
         "face-api.js": "^0.22.2",
         "framer-motion": "^12.23.25",
         "html-to-image": "^1.11.13",
         "lucide-react": "^0.555.0",
+        "move-position": "^2.0.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "react-hot-toast": "^2.4.1",
-        "react-router-dom": "^6.20.1"
+        "react-router-dom": "^6.20.1",
+        "socket.io-client": "^4.8.1",
+        "three": "^0.182.0"
     },
     "devDependencies": {
         "@types/react": "^18.2.43",
