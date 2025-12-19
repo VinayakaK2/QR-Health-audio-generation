@@ -94,7 +94,7 @@ const HealthBuddy = () => {
         if (head) {
             const queue = new AudioQueue(async (data) => {
                 if (!data || !data.audio) return;
-                console.log("🗣️ Avatar Speaking (Server Audio):", data.text);
+                console.log("🗣️ Avatar Speaking:", data.text);
 
                 try {
                     // Convert Base64 to ArrayBuffer
@@ -105,37 +105,29 @@ const HealthBuddy = () => {
                         bytes[i] = binaryString.charCodeAt(i);
                     }
                     const arrayBuffer = bytes.buffer;
-                    console.log(`📦 Decoded Audio Size: ${arrayBuffer.byteLength} bytes`);
+                    console.log(`📦 Audio Size: ${arrayBuffer.byteLength} bytes`);
 
-                    // 1. DEBUG: Direct Playback (Test if file is valid)
-                    try {
-                        const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
-                        const url = URL.createObjectURL(blob);
-                        console.log("🔊 Debug Output URL:", url);
-                        const debugAudio = new Audio(url);
-                        debugAudio.volume = 1.0;
-
-                        // Play immediately to verify sound (might echo with avatar, but ensures we hear IT)
-                        debugAudio.play().catch(e => console.error("Debug Audio Play failed:", e));
-                    } catch (e) {
-                        console.error("Debug Audio Blob failed:", e);
+                    // Ensure audio context is running
+                    if (head?.audioCtx && head.audioCtx.state === 'suspended') {
+                        console.log("� Resuming Audio Context for lip-sync...");
+                        await head.audioCtx.resume();
                     }
 
-                    // 2. Avatar Lipsync (Primary Method)
+                    // Use TalkingHead's speakAudio for lip-sync
                     if (head && typeof head.speakAudio === 'function') {
-                        // Ensure context is running
-                        if (head.audioCtx?.state === 'suspended') {
-                            console.log("🔓 Resuming Audio Context...");
-                            await head.audioCtx.resume();
-                        }
-                        await head.speakAudio(arrayBuffer, { text: data.text });
+                        console.log("💬 Starting lip-sync animation...");
+                        await head.speakAudio(arrayBuffer, {
+                            text: data.text,
+                            // These options help with lip-sync accuracy
+                            lipsyncLang: 'en'
+                        });
+                        console.log("✅ Lip-sync completed");
                     } else {
-                        console.error("Head does not support speakAudio");
+                        console.error("❌ Head.speakAudio not available");
                     }
 
-                    console.log("✅ Speech finished");
                 } catch (err) {
-                    console.error("❌ AudioPlayback Error:", err);
+                    console.error("❌ Lip-sync Error:", err);
                 }
             });
             setAudioQueue(queue);
@@ -197,7 +189,9 @@ const HealthBuddy = () => {
             if (micStreamRef.current) {
                 micStreamRef.current.getTracks().forEach(track => track.stop());
             }
-            if (audioContextRef.current) audioContextRef.current.close();
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                audioContextRef.current.close();
+            }
             if (recognitionRef.current) recognitionRef.current.stop();
             setIsListening(false);
             return;

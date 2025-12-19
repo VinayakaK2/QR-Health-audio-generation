@@ -133,7 +133,7 @@ async function streamGeminiAudio(socket, text) {
                         speechConfig: {
                             voiceConfig: {
                                 prebuiltVoiceConfig: {
-                                    voiceName: "Kore" // Fixed voice for consistency
+                                    voiceName: "Zephyr" // Fixed voice for consistency
                                 }
                             }
                         }
