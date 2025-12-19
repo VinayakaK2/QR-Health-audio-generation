@@ -25,6 +25,7 @@ const HealthBuddy = () => {
     const [isAvatarLoading, setIsAvatarLoading] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const [recognition, setRecognition] = useState(null);
+    const [audioLevel, setAudioLevel] = useState(0); // For debugging VAD
 
     // 1. Socket Connection
     useEffect(() => {
@@ -88,23 +89,53 @@ const HealthBuddy = () => {
     //     }
     // }, [head]);
 
-    // 2. Audio Queue (Corrected for Lip-Sync)
+    // 2. Audio Queue (Server Audio Mode)
     useEffect(() => {
         if (head) {
-            const queue = new AudioQueue(async (text) => {
-                console.log("🗣️ Avatar Speaking:", text);
+            const queue = new AudioQueue(async (data) => {
+                if (!data || !data.audio) return;
+                console.log("🗣️ Avatar Speaking (Server Audio):", data.text);
+
                 try {
-                    // FIX: Use the head's built-in function instead of manual window.speechSynthesis
-                    // This allows the library to calculate lip-sync while speaking.
-                    await head.speakText(text, {
-                        rate: 1.0,    // Speed of speech
-                        pitch: 1.0,   // Pitch of speech
-                        volume: 1.0   // Volume
-                    });
+                    // Convert Base64 to ArrayBuffer
+                    const binaryString = window.atob(data.audio);
+                    const len = binaryString.length;
+                    const bytes = new Uint8Array(len);
+                    for (let i = 0; i < len; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    const arrayBuffer = bytes.buffer;
+                    console.log(`📦 Decoded Audio Size: ${arrayBuffer.byteLength} bytes`);
+
+                    // 1. DEBUG: Direct Playback (Test if file is valid)
+                    try {
+                        const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
+                        const url = URL.createObjectURL(blob);
+                        console.log("🔊 Debug Output URL:", url);
+                        const debugAudio = new Audio(url);
+                        debugAudio.volume = 1.0;
+
+                        // Play immediately to verify sound (might echo with avatar, but ensures we hear IT)
+                        debugAudio.play().catch(e => console.error("Debug Audio Play failed:", e));
+                    } catch (e) {
+                        console.error("Debug Audio Blob failed:", e);
+                    }
+
+                    // 2. Avatar Lipsync (Primary Method)
+                    if (head && typeof head.speakAudio === 'function') {
+                        // Ensure context is running
+                        if (head.audioCtx?.state === 'suspended') {
+                            console.log("🔓 Resuming Audio Context...");
+                            await head.audioCtx.resume();
+                        }
+                        await head.speakAudio(arrayBuffer, { text: data.text });
+                    } else {
+                        console.error("Head does not support speakAudio");
+                    }
 
                     console.log("✅ Speech finished");
                 } catch (err) {
-                    console.error("❌ AudioQueue Error:", err);
+                    console.error("❌ AudioPlayback Error:", err);
                 }
             });
             setAudioQueue(queue);
@@ -149,54 +180,180 @@ const HealthBuddy = () => {
         setTimeout(initAvatar, 500);
     }, []);
 
-    // 4. Initialize Speech Recognition
-    const isProcessingSpeech = useRef(false);
+    // 4. Voice Activity Detection (VAD) + Speech Recognition
+    const transcriptBuffer = useRef("");
+    const silenceTimer = useRef(null);
+    const recognitionRef = useRef(null);
+    const audioContextRef = useRef(null);
+    const analyserRef = useRef(null);
+    const micStreamRef = useRef(null);
+    const vadIntervalRef = useRef(null);
+    const isRecognitionActive = useRef(false);
 
     useEffect(() => {
-        let recog = null;
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recog = new SpeechRecognition();
-            recog.continuous = true; // Stop after one sentence
-            recog.interimResults = false;
-            recog.lang = 'en-US';
-
-            recog.onstart = () => setIsListening(true);
-            recog.onend = () => {
-                setIsListening(false);
-                isProcessingSpeech.current = false;
-            };
-
-            recog.onresult = (event) => {
-                const result = event.results[0];
-                const transcript = result[0].transcript;
-
-                // Prevent duplicate processing
-                if (isProcessingSpeech.current) return;
-
-                // Ensure it's final or strictly treat first result as final for this setups
-                if (result.isFinal || !recog.interimResults) {
-                    isProcessingSpeech.current = true;
-                    console.log("🎤 Heard:", transcript);
-                    handleSendMessage(transcript);
-                }
-            };
-
-            setRecognition(recog);
+        if (mode !== 'live') {
+            // Cleanup if not in live mode
+            if (vadIntervalRef.current) cancelAnimationFrame(vadIntervalRef.current);
+            if (micStreamRef.current) {
+                micStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+            if (audioContextRef.current) audioContextRef.current.close();
+            if (recognitionRef.current) recognitionRef.current.stop();
+            setIsListening(false);
+            return;
         }
 
-        // Cleanup
-        return () => {
-            if (recog) recog.abort();
+        // Check browser support
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            console.error('Speech Recognition not supported');
+            return;
+        }
+
+        // Initialize Speech Recognition
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recog = new SpeechRecognition();
+        recog.continuous = true;
+        recog.interimResults = true;
+        recog.lang = 'en-US';
+
+        recog.onresult = (event) => {
+            if (silenceTimer.current) clearTimeout(silenceTimer.current);
+
+            let finalChunk = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalChunk += event.results[i][0].transcript;
+                }
+            }
+
+            if (finalChunk) {
+                transcriptBuffer.current += finalChunk + " ";
+                console.log("🎤 Captured:", finalChunk);
+            }
         };
-    }, [socket]); // Re-bind if socket changes
+
+        recog.onend = () => {
+            isRecognitionActive.current = false;
+            console.log("🔴 Recognition stopped");
+        };
+
+        recog.onerror = (event) => {
+            console.error("Recognition error:", event.error);
+            isRecognitionActive.current = false;
+        };
+
+        recognitionRef.current = recog;
+
+        // Initialize Voice Activity Detection
+        const initVAD = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                micStreamRef.current = stream;
+
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                audioContextRef.current = audioContext;
+
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+                analyser.smoothingTimeConstant = 0.8;
+                analyserRef.current = analyser;
+
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                const VOICE_THRESHOLD = 35; // Lowered for better sensitivity
+                const SILENCE_DURATION = 2000; // 2 seconds
+                const MIN_VOICE_DURATION = 100; // Reduced to 100ms
+                let lastVoiceTime = 0;
+                let voiceStartTime = 0;
+                let isVoiceDetected = false;
+
+                const checkVoiceActivity = () => {
+                    analyser.getByteFrequencyData(dataArray);
+
+                    // Calculate average volume
+                    const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+
+                    // Update UI state for debugging
+                    setAudioLevel(Math.round(average));
+
+                    const now = Date.now();
+
+                    if (average > VOICE_THRESHOLD) {
+                        // Potential voice detected
+                        if (!isVoiceDetected) {
+                            voiceStartTime = now;
+                            isVoiceDetected = true;
+                        }
+
+                        lastVoiceTime = now;
+
+                        // Only start recognition if voice sustained for minimum duration
+                        if (!isRecognitionActive.current && (now - voiceStartTime > MIN_VOICE_DURATION)) {
+                            try {
+                                console.log(`🔴 Voice detected (level: ${average.toFixed(1)}) - Starting recognition`);
+                                recog.start();
+                                isRecognitionActive.current = true;
+                                setIsListening(true);
+                            } catch (e) {
+                                console.warn("Recognition already active");
+                            }
+                        }
+                    } else {
+                        // Below threshold
+                        isVoiceDetected = false;
+
+                        // Silence detected - stop after duration
+                        if (isRecognitionActive.current && (now - lastVoiceTime > SILENCE_DURATION)) {
+                            console.log("⚪ Silence detected - Stopping recognition");
+                            recog.stop();
+                            isRecognitionActive.current = false;
+                            setIsListening(false);
+
+                            // Send accumulated message
+                            const messageToSend = transcriptBuffer.current.trim();
+                            if (messageToSend.length > 0) {
+                                console.log("🚀 Sending message:", messageToSend);
+                                handleSendMessage(messageToSend);
+                                transcriptBuffer.current = "";
+                            } else {
+                                console.log("❌ No transcript captured");
+                            }
+                        }
+                    }
+
+                    vadIntervalRef.current = requestAnimationFrame(checkVoiceActivity);
+                };
+
+                checkVoiceActivity();
+                console.log("✅ VAD initialized");
+
+            } catch (error) {
+                console.error("Failed to initialize VAD:", error);
+                alert("Microphone access required for Live Mode");
+            }
+        };
+
+        initVAD();
+
+        return () => {
+            if (vadIntervalRef.current) cancelAnimationFrame(vadIntervalRef.current);
+            if (silenceTimer.current) clearTimeout(silenceTimer.current);
+            if (micStreamRef.current) {
+                micStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+            if (audioContextRef.current) audioContextRef.current.close();
+            if (recognitionRef.current) recognitionRef.current.stop();
+        };
+    }, [mode, socket]);
 
     // 5. Socket Listeners
     useEffect(() => {
-        if (!socket) return; // audioQueue might be null in chat mode initially, handle text separately
+        if (!socket) return;
 
         socket.on('text_chunk', (data) => {
-            // Update Text Chat UI
+            // Update Text Chat UI ONLY
             setMessages(prev => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'ai' && last.isStreaming) {
@@ -208,14 +365,24 @@ const HealthBuddy = () => {
             });
             setIsThinking(false);
 
-            // If in Live Mode, Speak it
+            // NOTE: We do NOT speak text chunks anymore. We wait for audio_chunk.
+        });
+
+        socket.on('audio_chunk', (data) => {
+            // Check mode and queue availability
             if (mode === 'live' && audioQueue) {
-                audioQueue.enqueue(data.text);
+                audioQueue.enqueue(data);
             }
+        });
+
+        socket.on('stream_done', () => {
+            setIsThinking(false);
         });
 
         return () => {
             socket.off('text_chunk');
+            socket.off('audio_chunk');
+            socket.off('stream_done');
         };
     }, [socket, audioQueue, mode]);
 
@@ -367,17 +534,30 @@ const HealthBuddy = () => {
                     )}
 
                     <div className="pointer-events-auto flex flex-col items-center gap-6">
-                        {/* Mic Button */}
-                        <button
-                            onClick={handleMicClick}
-                            className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${isListening ? 'bg-red-500 scale-110 shadow-red-500/50 animate-pulse' : 'bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md'}`}
+                        {/* Mic Indicator (Auto VAD) */}
+                        <div
+                            className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${isListening ? 'bg-red-500 scale-110 shadow-red-500/50 animate-pulse' : 'bg-white/10 border border-white/20 backdrop-blur-md'}`}
                         >
                             {isListening ? <MicOff size={32} /> : <Mic size={32} />}
-                        </button>
+                        </div>
 
                         <p className="text-white/60 text-sm font-medium tracking-wider uppercase">
-                            {isListening ? "Listening..." : "Tap to Speak"}
+                            {isListening ? "Listening..." : "Waiting for Voice..."}
                         </p>
+                        <p className="text-white/40 text-xs">
+                            Voice Detection Active 🎙️
+                        </p>
+                        {/* Audio Level Meter for Debugging */}
+                        <div className="flex flex-col items-center gap-2 bg-black/30 backdrop-blur-md px-4 py-2 rounded-lg">
+                            <p className="text-white/60 text-xs">Audio Level: {audioLevel}</p>
+                            <div className="w-48 h-2 bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                    className={`h-full transition-all duration-100 ${audioLevel > 35 ? 'bg-green-500' : 'bg-white/30'}`}
+                                    style={{ width: `${Math.min(100, (audioLevel / 100) * 100)}%` }}
+                                />
+                            </div>
+                            <p className="text-white/40 text-xs">Threshold: 35 | Speak to test</p>
+                        </div>
                     </div>
                 </div>
             )}
