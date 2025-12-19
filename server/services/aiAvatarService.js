@@ -5,32 +5,44 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
+const chatHistory = new Map();
+
 module.exports = (io) => {
     io.on('connection', (socket) => {
         console.log('User connected to AI Avatar Chat:', socket.id);
+
+        // Initialize history for this session
+        if (!chatHistory.has(socket.id)) {
+            chatHistory.set(socket.id, [
+                { role: "system", content: "You are a friendly, calm, and empathetic virtual doctor assistant. Keep your responses concise (max 2 sentences). Do NOT provide medical diagnoses. Always advise consulting a real doctor for serious concerns. Speak as if you are a 3D avatar talking to a patient." }
+            ]);
+        }
 
         socket.on('user_message', async (data) => {
             const { message } = data;
             console.log(`Received: ${message}`);
 
             try {
+                // Get history
+                const history = chatHistory.get(socket.id);
+                history.push({ role: "user", content: message });
+
                 // Initialize stream response
                 const stream = await openai.chat.completions.create({
                     model: "gpt-4o-mini",
-                    messages: [
-                        { role: "system", content: "You are a friendly, calm, and empathetic virtual doctor assistant. Keep your responses concise (max 2 sentences). Do NOT provide medical diagnoses. Always advise consulting a real doctor for serious concerns. Speak as if you are a 3D avatar talking to a patient." },
-                        { role: "user", content: message }
-                    ],
+                    messages: history, // Send full history
                     stream: true,
                 });
 
                 let buffer = "";
+                let fullResponse = ""; // Track full response for history
 
                 // Process stream
                 for await (const chunk of stream) {
                     const content = chunk.choices[0]?.delta?.content || "";
                     if (content) {
                         buffer += content;
+                        fullResponse += content;
 
                         // Check for sentence boundaries
                         // We look for punctuation that ends a sentence (. ? !) AND a space or end of string
@@ -59,6 +71,16 @@ module.exports = (io) => {
                     await streamAudio(socket, buffer);
                 }
 
+                // Save Assistant response to history
+                history.push({ role: "assistant", content: fullResponse });
+
+                // Limit history to last 20 messages to save memory/tokens
+                if (history.length > 20) {
+                    // Keep system prompt [0] + last 19
+                    const newHistory = [history[0], ...history.slice(-19)];
+                    chatHistory.set(socket.id, newHistory);
+                }
+
                 socket.emit('stream_done');
 
             } catch (error) {
@@ -69,11 +91,14 @@ module.exports = (io) => {
 
         socket.on('disconnect', () => {
             console.log('User disconnected:', socket.id);
+            chatHistory.delete(socket.id); // Cleanup
         });
     });
 };
 
 async function streamAudio(socket, text) {
+    // DISABLE OPENAI TTS TO SAVE QUOTA
+    /*
     try {
         console.log(`Generating audio for: "${text}"`);
         const mp3 = await openai.audio.speech.create({
@@ -94,4 +119,6 @@ async function streamAudio(socket, text) {
     } catch (error) {
         console.error("TTS Error:", error);
     }
+    */
+    console.log(`Skipping audio generation for: "${text}" (Quota Saving Mode)`);
 }

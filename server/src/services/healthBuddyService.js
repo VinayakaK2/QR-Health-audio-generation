@@ -219,10 +219,12 @@ async function processHealthBuddyInteraction({
 
     // --- STEP 3: Generate Speech (TTS) ---
     let audioBase64 = null;
+    /* 
+    // DISABLE OPENAI TTS TO SAVE QUOTA - FRONTEND WILL HANDLE TTS
     try {
         const mp3 = await openai.audio.speech.create({
             model: "tts-1",
-            voice: "shimmer", // 'shimmer' is often good for friendly/female, 'alloy' for neutral
+            voice: "shimmer",
             input: aiResponseText,
         });
 
@@ -231,8 +233,8 @@ async function processHealthBuddyInteraction({
 
     } catch (err) {
         console.error("TTS Generation Error:", err);
-        // We can still return text even if audio fails
     }
+    */
 
     return {
         ...parsedResponse,
